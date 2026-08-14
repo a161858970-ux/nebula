@@ -1,0 +1,412 @@
+const { app, BrowserWindow, session, ipcMain, shell, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const http = require('http');
+const { pathToFileURL } = require('url');
+
+// 后端统一出口（esbuild 打包产物，见 package.json build:main）
+const {
+  registerIpcHandlers,
+  CookieStore,
+  setCookieDataDir,
+  HttpClient,
+  createAdapters,
+  SongResolver,
+  LyricService,
+  NeteaseLogin,
+  QqLogin,
+  QqRightsService,
+  kugouLoginAdapter,
+  qishuiLoginAdapter,
+  AudioProxy,
+  LyricCache,
+  probeAudioUrl,
+  normalizeCookieHeader,
+  validatePlatformCookie,
+} = require('../dist-main/index.cjs');
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+const DEV_URL = process.env.VITE_DEV_SERVER_URL;
+const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+
+/** Spotify OAuth（PKCE）：本地回调端口收 code → 换 token 存 CookieStore。 */
+function createSpotifyOAuth(cookies) {
+  let busy = false;
+  return {
+    status: () => !!cookies.get('spotify')?.cookies,
+    start: () =>
+      new Promise((resolve) => {
+        if (busy) return resolve(false);
+        if (!SPOTIFY_CLIENT_ID) {
+          console.error('[Spotify] 请设置环境变量 SPOTIFY_CLIENT_ID（免费在 developer.spotify.com 注册）');
+          resolve(false);
+          return;
+        }
+        busy = true;
+        const verifier = crypto.randomBytes(32).toString('base64url');
+        const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+        const port = 43891;
+        const redirectUri = `http://localhost:${port}/callback`;
+        const server = http.createServer(async (req, res) => {
+          const url = new URL(req.url, `http://localhost:${port}`);
+          if (url.pathname !== '/callback' || !url.searchParams.get('code')) return;
+          const code = url.searchParams.get('code');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<script>window.close()</script><p style="font-family:sans-serif">登录成功，可关闭窗口</p>');
+          server.close();
+          try {
+            const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                code,
+                redirect_uri: redirectUri,
+                client_id: SPOTIFY_CLIENT_ID,
+                code_verifier: verifier,
+              }).toString(),
+            });
+            const tok = await tokenRes.json();
+            if (tok.access_token) {
+              cookies.set('spotify', tok.access_token, tok.refresh_token ?? '', 'Spotify');
+              resolve(true);
+            } else {
+              resolve(false);
+            }
+          } catch {
+            resolve(false);
+          } finally {
+            busy = false;
+          }
+        });
+        server.listen(port, () => {
+          const authUrl =
+            `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}` +
+            `&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
+            `&scope=${encodeURIComponent('playlist-read-private playlist-read-collaborative user-library-read')}` +
+            `&code_challenge_method=S256&code_challenge=${challenge}`;
+          const win = new BrowserWindow({
+            width: 520,
+            height: 720,
+            title: 'Spotify 登录',
+            webPreferences: { contextIsolation: true, nodeIntegration: false },
+          });
+          win.loadURL(authUrl);
+          win.on('closed', () => {
+            server.close();
+            busy = false;
+            resolve(false);
+          });
+        });
+      }),
+  };
+}
+
+/**
+ * QQ 音乐官方登录：旧版 ptqrshow 二维码接口已被 403 封禁（网易云 QR 不受影响），
+ * 改用官方登录页（独立 partition）扫码，登录后自动读取该 partition 的 Cookie
+ * 做 normalize + 校验（uin + 播放票据），成功即落库并关闭窗口。
+ */
+function createQqLoginWindow(cookies) {
+  return new Promise(async (resolve) => {
+    const partition = 'persist:qq-music-login';
+    const ses = session.fromPartition(partition);
+    // 关键修复：每次打开登录窗口前清空该分区的登录态，
+    // 避免残留旧账号 Cookie 导致“自动登回旧账号”、无法换号登录。
+    try {
+      await ses.clearStorageData({ storages: ['cookies', 'localstorage'] });
+    } catch (err) {
+      console.warn('[QQ登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
+    }
+    const win = new BrowserWindow({
+      width: 560,
+      height: 800,
+      backgroundColor: '#0b0c16',
+      webPreferences: {
+        partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    win.setTitle('QQ 音乐登录（官方页面扫码）');
+    win.loadURL('https://y.qq.com/');
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      resolve(result);
+    };
+
+    // 每 2s 读取一次 partition Cookie，出现 uin + 播放票据即视为登录成功
+    const timer = setInterval(async () => {
+      try {
+        const list = await ses.cookies.get({});
+        const raw = list.map((c) => `${c.name}=${c.value}`).join('; ');
+        const normalized = normalizeCookieHeader(raw);
+        const v = validatePlatformCookie('qq', normalized);
+        if (v.ok) {
+          cookies.set('qq', normalized, undefined, 'QQ 音乐');
+          if (!win.isDestroyed()) win.close();
+          finish({ ok: true, message: 'QQ 音乐登录成功' });
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 2000);
+
+    win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
+  });
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 700,
+    backgroundColor: '#0a0b15',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  if (DEV_URL) {
+    win.loadURL(DEV_URL);
+  } else {
+    const indexHtml = path.join(__dirname, '../dist/index.html');
+    if (fs.existsSync(indexHtml)) {
+      win.loadFile(indexHtml);
+    } else {
+      win.loadURL(
+        'data:text/html;charset=utf-8,' +
+          encodeURIComponent(
+            '<div style="font-family:sans-serif;background:#0a0b15;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px">' +
+              '<h2>未找到构建产物 dist/index.html</h2>' +
+              '<p>请先运行 <code>pnpm build:desktop</code> 后再启动 electron .</p>' +
+              '</div>',
+          ),
+      );
+    }
+  }
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+/**
+ * 全局请求拦截：
+ * 1) onBeforeSendHeaders —— 对音乐平台域名注入 Referer/Origin/UA，解决 <audio> 防盗链 403；
+ * 2) onHeadersReceived —— 放开跨域响应头，防止音频被 CORS 拦截。
+ */
+function setupRequestInterception() {
+  const ses = session.defaultSession;
+  const inject = (urls, headers) => {
+    ses.webRequest.onBeforeSendHeaders({ urls }, (details, callback) => {
+      details.requestHeaders = { ...details.requestHeaders, ...headers };
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  };
+
+  inject(['*://*.music.163.com/*', '*://music.163.com/*', '*://*.music.126.net/*'], {
+    Referer: 'https://music.163.com/',
+    Origin: 'https://music.163.com',
+    'User-Agent': UA,
+  });
+
+  inject(['*://*.qq.com/*', '*://y.qq.com/*', '*://*.gtimg.cn/*', '*://*.qpic.cn/*'], {
+    Referer: 'https://y.qq.com/',
+    Origin: 'https://y.qq.com',
+    'User-Agent': UA,
+  });
+
+  inject(['*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kugou.net/*'], {
+    Referer: 'https://www.kugou.com/',
+    Origin: 'https://www.kugou.com',
+    'User-Agent': UA,
+  });
+
+  ses.webRequest.onHeadersReceived(
+    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*'] },
+    (details, callback) => {
+      const responseHeaders = { ...details.responseHeaders };
+      responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+      responseHeaders['Access-Control-Allow-Credentials'] = ['true'];
+      callback({ responseHeaders });
+    },
+  );
+}
+
+/**
+ * 本地音乐导入：系统原生文件夹选择器 → 递归扫描 mp3/flac/m4a/aac/ogg/wav →
+ * music-metadata 提取 ID3/FLAC/M4A 元数据（歌名/歌手/专辑/内置封面/时长）→ 返回标准 Track 列表。
+ */
+async function handleOpenLocalDirectory() {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, {
+    title: '选择本地音乐文件夹',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { ok: true, data: { tracks: [], canceled: true } };
+  }
+  const root = result.filePaths[0];
+  const files = [];
+  const walk = (dir, depth) => {
+    if (depth > 3 || files.length >= 500) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const en of entries) {
+      const p = path.join(dir, en.name);
+      if (en.isDirectory()) {
+        walk(p, depth + 1);
+      } else if (/\.(mp3|flac|m4a|aac|ogg|wav)$/i.test(en.name)) {
+        files.push(p);
+        if (files.length >= 500) return;
+      }
+    }
+  };
+  walk(root, 0);
+  files.sort((a, b) => a.localeCompare(b));
+  if (!files.length) {
+    return { ok: true, data: { tracks: [], canceled: false } };
+  }
+
+  let mm;
+  try {
+    mm = await import('music-metadata');
+  } catch (err) {
+    return { ok: false, error: `music-metadata 加载失败: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const tracks = [];
+  for (const f of files) {
+    try {
+      const meta = await mm.parseFile(f, { duration: true });
+      const pic = meta.common.picture?.[0];
+      const cover = pic?.data?.length
+        ? `data:${pic.format || 'image/jpeg'};base64,${pic.data.toString('base64')}`
+        : '';
+      tracks.push({
+        id: `local:${f}`,
+        title: meta.common.title || path.basename(f, path.extname(f)),
+        artist: meta.common.artist || (meta.common.artists || []).join(', ') || '未知歌手',
+        artists: meta.common.artists ?? [],
+        album: meta.common.album ?? '',
+        cover,
+        duration: Math.round(meta.format.duration || 0),
+        platform: 'local',
+        sourceId: f,
+        originalUrl: pathToFileURL(f).href,
+        fallbackUrl: '',
+      });
+    } catch {
+      /* 损坏/不支持的音频跳过 */
+    }
+  }
+  return { ok: true, data: { tracks, canceled: false } };
+}
+
+app.whenReady().then(() => {
+  // Cookie/Token 安全落在应用用户数据目录，按平台隔离持久化
+  setCookieDataDir(app.getPath('userData'));
+
+  const cookies = new CookieStore();
+  const http = new HttpClient(cookies);
+  const audioProxy = new AudioProxy(cookies);
+  audioProxy.start();
+  const adapters = createAdapters(http, cookies);
+  const resolver = new SongResolver(
+    adapters,
+    (m) => console.warn('[SongResolver]', m),
+    (url, platform) =>
+      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform) }).then((r) => r.ok),
+  );
+  // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
+  const lyricCache = new LyricCache(app.getPath('userData'));
+  const lyricService = new LyricService(adapters, lyricCache);
+  const login = new NeteaseLogin(http, cookies);
+  const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
+
+  // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
+  login.probeLogin();
+  const loginAdapters = {
+    netease: {
+      platform: 'netease',
+      name: '网易云音乐',
+      kind: 'qr',
+      createQr: () => login.createQr(),
+      pollLogin: (unikey) => login.pollLogin(unikey),
+      getAccount: () => login.getAccount(),
+      getMyPlaylists: () => login.getMyPlaylists(),
+    },
+    qq: {
+      platform: 'qq',
+      name: 'QQ 音乐',
+      kind: 'qr',
+      createQr: () => qqLogin.createQr(),
+      pollLogin: (unikey) => qqLogin.pollLogin(unikey),
+      getAccount: () => qqLogin.getAccount(),
+      getMyPlaylists: () => qqLogin.getMyPlaylists(),
+    },
+    kugou: kugouLoginAdapter,
+    qishui: qishuiLoginAdapter,
+    spotify: {
+      platform: 'spotify',
+      name: 'Spotify',
+      kind: 'oauth',
+      getAccount: async () => {
+        const rec = cookies.get('spotify');
+        return rec?.cookies ? { userId: 'spotify', nickname: 'Spotify 用户' } : null;
+      },
+      getMyPlaylists: () => adapters.spotify.getMyPlaylists(),
+    },
+  };
+
+  registerIpcHandlers(ipcMain, {
+    adapters,
+    resolver,
+    lyricService,
+    cookies,
+    login,
+    loginAdapters,
+    audioProxy,
+    spotifyOAuth: createSpotifyOAuth(cookies),
+    qqLoginWindow: () => createQqLoginWindow(cookies),
+    // 退出登录时同步清空 QQ 官方登录窗口独立分区的 Cookie，
+    // 确保 CookieStore 与浏览器会话一并干净退出。
+    onCookieClear: async (platform) => {
+      if (platform !== 'qq') return;
+      try {
+        await session.fromPartition('persist:qq-music-login').clearStorageData({
+          storages: ['cookies', 'localstorage'],
+        });
+      } catch (err) {
+        console.warn('[QQ登录] 退出时清理分区 Cookie 失败:', err instanceof Error ? err.message : err);
+      }
+    },
+  });
+  ipcMain.handle('nebula:open-local-directory', handleOpenLocalDirectory);
+  setupRequestInterception();
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});

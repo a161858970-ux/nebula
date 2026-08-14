@@ -1,0 +1,38 @@
+{
+  "name": "music-nebula",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist-main/index.cjs --log-level=warning --external:@neteasecloudmusicapienhanced/* --external:qrcode",
+    "build:desktop": "tsc --noEmit && vite build --outDir dist && pnpm build:main",
+    "desktop": "node scripts/desktop-check.mjs && electron .",
+    "qa:backend": "pnpm build:main && node scripts/backend-smoke.mjs",
+    "qa:qq-live": "pnpm build:main && node scripts/qq-live-check.mjs",
+    "qa:desktop-play": "node scripts/desktop-play-smoke.mjs",
+    "preview": "vite preview",
+    "qa": "node scripts/qa.cjs"
+  },
+  "dependencies": {
+    "@neteasecloudmusicapienhanced/api": "4.40.0",
+    "music-metadata": "^11.14.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^43.3.0",
+    "esbuild": "^0.21.5",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}
