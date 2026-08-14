@@ -113,6 +113,8 @@ export default function App() {
     let highlightStyle: LyricVisualSettings['highlightStyle'] = 'sweep';
     let wordHighlight = true;
     let layerMode: LyricVisualSettings['layerMode'] = 'under';
+    let currentScale = 1.22;
+    let wordRise = 4;
     try {
       const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
       if (s) {
@@ -121,11 +123,13 @@ export default function App() {
         if (p.highlightStyle === 'sweep' || p.highlightStyle === 'float') highlightStyle = p.highlightStyle;
         if (typeof p.wordHighlight === 'boolean') wordHighlight = p.wordHighlight;
         if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
+        if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
+        if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
       }
     } catch {
       /* 用默认值 */
     }
-    return { fontSize, highlightStyle, wordHighlight, layerMode };
+    return { fontSize, highlightStyle, wordHighlight, layerMode, currentScale, wordRise };
   });
   const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
   const [bgCoverMode, setBgCoverMode] = useState<'frosted' | 'cinematic' | 'prism'>(() => {
@@ -811,6 +815,14 @@ export default function App() {
     (m: LyricVisualSettings['layerMode']) => persistLyricSettings({ ...lyricSettings, layerMode: m }),
     [lyricSettings, persistLyricSettings],
   );
+  const handleCurrentScale = useCallback(
+    (n: number) => persistLyricSettings({ ...lyricSettings, currentScale: n }),
+    [lyricSettings, persistLyricSettings],
+  );
+  const handleWordRise = useCallback(
+    (n: number) => persistLyricSettings({ ...lyricSettings, wordRise: n }),
+    [lyricSettings, persistLyricSettings],
+  );
   const handleCoverMode = useCallback((m: 'frosted' | 'cinematic' | 'prism') => {
     setBgCoverMode(m);
     try {
@@ -874,7 +886,6 @@ export default function App() {
         lines={lyricLines}
         currentTime={playerState.currentTime}
         playing={playerState.playing}
-        translateOn={lyricTranslate}
         frameBus={frameBusRef.current}
         settings={lyricSettings}
         songKey={
@@ -882,6 +893,8 @@ export default function App() {
             ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}`
             : 'none'
         }
+        songTitle={playerState.song?.title}
+        songArtist={playerState.song?.artist}
       />
 
       <div ref={stageRef} className={`stage-3d${importing ? ' is-importing' : ''}`}>
@@ -945,6 +958,8 @@ export default function App() {
         onHighlightStyle={handleHighlightStyle}
         onWordHighlight={handleWordHighlight}
         onLayerMode={handleLayerMode}
+        onCurrentScale={handleCurrentScale}
+        onWordRise={handleWordRise}
       />
 
       <PlaylistSidebar

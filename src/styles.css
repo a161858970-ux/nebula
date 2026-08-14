@@ -1617,6 +1617,7 @@ body {
 
 .fw-base {
   color: var(--fl-dim);
+  transform: translateZ(0);
 }
 
 .fw-fill {
@@ -1625,7 +1626,8 @@ body {
   color: var(--fl-hi);
   clip-path: inset(0 calc(100% - var(--wp, 0) * 100%) 0 0);
   text-shadow: 0 0 16px rgba(var(--lyric-rgb, 245, 246, 250), 0.45);
-  will-change: clip-path;
+  transform: translateZ(0);
+  will-change: clip-path, transform;
 }
 
 .flow-lyric .fl-tr {
@@ -1645,7 +1647,7 @@ body {
 .hl-float .fw-fill {
   clip-path: none;
   opacity: var(--wp, 0);
-  transform: translateY(calc((1 - var(--wp, 0)) * 3px));
+  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * 3px));
   text-shadow: 0 0 18px rgba(var(--lyric-rgb, 245, 246, 250), 0.55);
 }
 
@@ -1665,7 +1667,44 @@ body {
 
 /* 已唱字轻微上浮 2px，增加“吐字”感（扫光风格） */
 .hl-sweep .fl-word {
-  transform: translateY(calc(-1 * var(--wp, 0) * 2px));
+  transform: translateY(calc(-1 * var(--wp, 0) * var(--lyric-rise, 4px)));
+}
+
+/* 前奏/纯音乐：歌曲信息居中展示 */
+.lyrics-intro {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  pointer-events: none;
+  transition: opacity 0.6s ease-out;
+  opacity: 0.92;
+  white-space: nowrap;
+}
+
+.lyrics-intro .li-title {
+  font-size: calc(var(--lyric-size, 24px) * 1.35);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--fl-hi);
+  text-shadow: 0 0 22px rgba(var(--lyric-rgb, 245, 246, 250), 0.45);
+}
+
+.lyrics-intro .li-artist {
+  font-size: calc(var(--lyric-size, 24px) * 0.72);
+  color: var(--fl-dim);
+  letter-spacing: 0.6px;
+}
+
+.lyrics-intro .li-note {
+  margin-top: 6px;
+  font-size: calc(var(--lyric-size, 24px) * 0.5);
+  color: var(--fl-dim);
 }
 
 /* ============================================================

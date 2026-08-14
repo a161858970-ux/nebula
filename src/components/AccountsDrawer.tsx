@@ -30,6 +30,8 @@ interface AccountsDrawerProps {
   onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
   onWordHighlight: (b: boolean) => void;
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
+  onCurrentScale: (n: number) => void;
+  onWordRise: (n: number) => void;
 }
 
 interface LyricSettingsProps {
@@ -38,6 +40,8 @@ interface LyricSettingsProps {
   onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
   onWordHighlight: (b: boolean) => void;
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
+  onCurrentScale: (n: number) => void;
+  onWordRise: (n: number) => void;
 }
 
 /** 歌词设置：字号 / 高亮风格 / 逐字开关。 */
@@ -47,6 +51,8 @@ function LyricSettings({
   onHighlightStyle,
   onWordHighlight,
   onLayerMode,
+  onCurrentScale,
+  onWordRise,
 }: LyricSettingsProps) {
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   return (
@@ -87,6 +93,30 @@ function LyricSettings({
           checked={setting.wordHighlight}
           onChange={(e) => onWordHighlight(e.target.checked)}
         />
+      </label>
+      <label className="ls-row">
+        <span>当前句放大</span>
+        <input
+          type="range"
+          min={1}
+          max={1.6}
+          step={0.02}
+          value={setting.currentScale}
+          onChange={(e) => onCurrentScale(Number(e.target.value))}
+        />
+        <em>{setting.currentScale.toFixed(2)}×</em>
+      </label>
+      <label className="ls-row">
+        <span>逐字上浮</span>
+        <input
+          type="range"
+          min={0}
+          max={12}
+          step={1}
+          value={setting.wordRise}
+          onChange={(e) => onWordRise(Number(e.target.value))}
+        />
+        <em>{setting.wordRise}px</em>
       </label>
       <div className="ls-row">
         <span>悬浮层次</span>
@@ -345,6 +375,8 @@ export function AccountsDrawer({
   onHighlightStyle,
   onWordHighlight,
   onLayerMode,
+  onCurrentScale,
+  onWordRise,
 }: AccountsDrawerProps) {
   const info = platforms.find((p) => p.platform === selectedPlatform);
 
@@ -373,6 +405,8 @@ export function AccountsDrawer({
           onHighlightStyle={onHighlightStyle}
           onWordHighlight={onWordHighlight}
           onLayerMode={onLayerMode}
+          onCurrentScale={onCurrentScale}
+          onWordRise={onWordRise}
         />
       ) : tab === 'background' ? (
         <BackgroundPicker setting={bgSetting} coverMode={coverMode} onSelect={onSelectBg} onFile={onFile} onCoverMode={onCoverMode} />
