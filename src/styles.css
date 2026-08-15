@@ -1608,26 +1608,17 @@ body {
   line-height: 1.25;
 }
 
-/* ?????? + ???????? background-clip/drop-shadow ?????? */
+/* ????????????? + ????????????? */
 .fl-word {
   position: relative;
   display: inline-block;
   white-space: pre;
-}
-
-.fw-base {
-  color: var(--fl-dim);
+  background: linear-gradient(90deg, var(--fl-hi) var(--wp, 0%), var(--fl-dim) var(--wp, 0%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   transform: translateZ(0);
-}
-
-.fw-fill {
-  position: absolute;
-  inset: 0;
-  color: var(--fl-hi);
-  clip-path: inset(0 calc(100% - var(--wp, 0) * 100%) 0 0);
-  text-shadow: 0 0 16px rgba(var(--lyric-rgb, 245, 246, 250), 0.45);
-  transform: translateZ(0);
-  will-change: clip-path, transform;
+  will-change: background;
 }
 
 .flow-lyric .fl-tr {
@@ -1637,19 +1628,12 @@ body {
   white-space: nowrap;
 }
 
-.flow-lyric.is-current .fw-fill {
-  text-shadow:
-    0 0 12px rgba(0, 0, 0, 0.35),
-    0 0 22px rgba(var(--lyric-rgb, 245, 246, 250), 0.55);
+/* ?????????????? --wp ??? */
+.hl-float .fl-word {
+  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * 3px));
+  text-shadow: 0 0 14px rgba(var(--lyric-rgb, 245, 246, 250), 0.5);
 }
 
-/* ??????????????????? --wp ???? transition ???? */
-.hl-float .fw-fill {
-  clip-path: none;
-  opacity: var(--wp, 0);
-  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * 3px));
-  text-shadow: 0 0 18px rgba(var(--lyric-rgb, 245, 246, 250), 0.55);
-}
 
 /* ???????????? + ???? */
 .lyric-dark .lyrics-layer {

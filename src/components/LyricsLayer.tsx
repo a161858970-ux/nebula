@@ -101,6 +101,15 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
+/** 估算单行文字像素宽度（CJK≈1 字宽，拉丁≈0.56 字宽）。 */
+function estimateWidth(text: string, fontSize: number, scale: number): number {
+  let w = 0;
+  for (const ch of text) {
+    w += /[\u2E80-\u9FFF\uF900-\uFAFF\u3000-\u303F]/.test(ch) ? 1 : 0.56;
+  }
+  return Math.max(48, w * fontSize * scale);
+}
+
 /** 当前时间对应的“可用正文”行（跳过翻译独行/空行）。 */
 function usableCurrent(lines: LyricLineUI[], timeMs: number): number {
   const idx = currentLyricIndex(lines, timeMs);
@@ -149,6 +158,8 @@ export function LyricsLayer({
   const smoothTRef = useRef(currentTime * 1000);
   const lastTRef = useRef(currentTime * 1000);
   const simTRef = useRef(0);
+  /** 水平偏移平衡器：避免候选句连续多句扎堆同一侧。 */
+  const balanceRef = useRef(0);
 
   if (songKey !== songKeyRef.current) {
     songKeyRef.current = songKey;
@@ -163,6 +174,7 @@ export function LyricsLayer({
     smoothTRef.current = 0;
     lastTRef.current = 0;
     simTRef.current = 0;
+    balanceRef.current = 0;
   }
   if (lines !== prevLinesRef.current) {
     prevLinesRef.current = lines;
@@ -192,8 +204,29 @@ export function LyricsLayer({
     let last = performance.now();
 
     /** 角色对应的目标带（不含呼吸）。 */
-    const roleTarget = (fl: Flight, role: Role, cw: number, ch: number): { x: number; y: number } => {
-      const x = cw / 2 + fl.xOff;
+    const lineWidthPx = (lineIdx: number, line: LyricLineUI | undefined, scale: number): number => {
+      const el = elRefs.current.get(lineIdx);
+      const cosR = 1; // 旋转对水平投影影响 <2%，忽略
+      if (el && el.scrollWidth > 0) return el.scrollWidth * scale * cosR;
+      if (line?.text) return estimateWidth(line.text, settings.fontSize, 1) * scale;
+      return 0;
+    };
+    /** 水平安全区：右侧句末不触碰右边缘（当前句阈值更高），左侧对称收拢。 */
+    const clampX = (x: number, role: Role, width: number, cw: number): number => {
+      const safeR = cw * (role === 'current' ? 0.12 : 0.1);
+      const safeL = cw * (role === 'current' ? 0.06 : 0.04);
+      return clamp(x, safeL, Math.max(safeL, cw - safeR - width));
+    };
+    const roleTarget = (
+      fl: Flight,
+      role: Role,
+      cw: number,
+      ch: number,
+      line: LyricLineUI | undefined,
+    ): { x: number; y: number } => {
+      let x = cw / 2 + fl.xOff;
+      const width = lineWidthPx(fl.lineIdx, line, fl.scale);
+      x = clampX(x, role, width, cw);
       let y: number;
       if (role === 'current') {
         y = ch * MAIN_Y;
@@ -227,6 +260,12 @@ export function LyricsLayer({
 
     const spawnFlight = (lineIdx: number, role: Role, t: number, cw: number, ch: number): Flight => {
       const side = Math.random() < 0.5 ? 'above' : 'below';
+      // 水平偏移平衡：连续同侧超过 2 次即强制换边，避免候选句扎堆一侧
+      let xSign: number;
+      if (balanceRef.current >= 1) xSign = -1;
+      else if (balanceRef.current <= -1) xSign = 1;
+      else xSign = Math.random() < 0.5 ? -1 : 1;
+      balanceRef.current = clamp(balanceRef.current + xSign * 0.5, -2, 2);
       const fl: Flight = {
         lineIdx,
         role,
@@ -239,7 +278,7 @@ export function LyricsLayer({
         targetScale: 0.68,
         opacity: 0,
         targetOpacity: 0.42,
-        xOff: (Math.random() < 0.5 ? -1 : 1) * rand(X_OFF[0], X_OFF[1]) * cw,
+        xOff: xSign * rand(X_OFF[0], X_OFF[1]) * cw,
         yMag: rand(NEXT_MAG[0], NEXT_MAG[1]) * ch,
         yMagNext:
           settings.lyricLayout === 'stacked'
@@ -259,7 +298,7 @@ export function LyricsLayer({
         exitVx: 0,
         exitVy: 0,
       };
-      const target = roleTarget(fl, role, cw, ch);
+      const target = roleTarget(fl, role, cw, ch, lines[lineIdx]);
       const timeToStart = lines[lineIdx]?.timeMs != null ? lines[lineIdx]!.timeMs - t : 0;
       if (role === 'current') {
         // seek 补位：直接出现在主带，短促淡入
@@ -379,7 +418,7 @@ export function LyricsLayer({
             fl.sy += fl.exitVy * ease * dt;
           }
         } else if (playingNow) {
-          const target = roleTarget(fl, fl.role, cw, ch);
+          const target = roleTarget(fl, fl.role, cw, ch, lines[lineIdx]);
           let tx = target.x;
           const ty = target.y;
           // 当前句：保护性微调（最后 25%–30% 时长冻结）
@@ -396,6 +435,7 @@ export function LyricsLayer({
                 const wordX = fl.sx + off;
                 if (wordX < cw * 0.12) tx += (cw * 0.12 - wordX) * 0.18;
                 else if (wordX > cw * 0.88) tx -= (wordX - cw * 0.88) * 0.18;
+                tx = clampX(tx, 'current', lineWidthPx(lineIdx, line, fl.scale), cw);
               }
             }
           }
@@ -542,8 +582,7 @@ export function LyricsLayer({
                       }}
                     >
                       {needSpace ? ' ' : null}
-                      <span className="fw-base">{w.text}</span>
-                      <span className="fw-fill">{w.text}</span>
+                      {w.text}
                     </span>
                   );
                 })}
