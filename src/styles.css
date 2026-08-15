@@ -1613,7 +1613,12 @@ body {
   position: relative;
   display: inline-block;
   white-space: pre;
-  background: linear-gradient(90deg, var(--fl-hi) var(--wp, 0%), var(--fl-dim) var(--wp, 0%));
+  /* --wp 是无单位数字（0~1），必须经 calc 转成百分比，否则渐变失效导致文字隐形 */
+  background: linear-gradient(
+    90deg,
+    var(--fl-hi) calc(var(--wp, 0) * 100%),
+    var(--fl-dim) calc(var(--wp, 0) * 100%)
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
