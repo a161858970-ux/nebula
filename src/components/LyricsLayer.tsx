@@ -223,8 +223,10 @@ export function LyricsLayer({
       ch: number,
       line: LyricLineUI | undefined,
     ): { x: number; y: number } => {
-      let x = cw / 2 + fl.xOff;
       const width = lineWidthPx(fl.lineIdx, line, fl.scale);
+      // 以“文字中心”对齐 cw/2 + xOff：xOff 作用于文字中心而非左边缘，
+      // 否则正偏移会被半宽放大、负偏移被半宽抵消，视觉上整体偏右
+      let x = cw / 2 - width / 2 + fl.xOff;
       x = clampX(x, role, width, cw);
       let y: number;
       if (role === 'current') {
