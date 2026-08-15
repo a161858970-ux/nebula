@@ -1,8 +1,9 @@
+import type { CSSProperties } from 'react';
 import { BACKGROUND_PRESETS } from '../lib/backgrounds';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import { Starfield } from './Starfield';
 
-export type CoverBgMode = 'frosted' | 'cinematic' | 'prism';
+export type CoverBgMode = 'fill' | 'frosted' | 'color' | 'palette' | 'blend' | 'prism';
 
 export function BackgroundLayer({
   setting,
@@ -14,9 +15,17 @@ export function BackgroundLayer({
   if (setting.type === 'cover') return null; // 封面背景由 App 换算为 image/preset 后传入
   if (setting.type === 'image') {
     return (
-      <div className={`bg-layer${coverMode ? ` bg-cover-mode is-${coverMode}` : ''}`}>
+      <div
+        className={`bg-layer${coverMode ? ` bg-cover-mode is-${coverMode}` : ''}`}
+        style={{ '--cover-url': `url("${setting.url}")` } as CSSProperties}
+      >
+        {coverMode === 'fill' && <span className="bg-fill-sides" />}
         <img className="bg-media" src={setting.url} alt="自定义背景" draggable={false} />
+        {coverMode === 'blend' && <img className="bg-media-ghost" src={setting.url} alt="" draggable={false} />}
+        {coverMode === 'color' && <div className="bg-color-base" />}
+        {coverMode === 'palette' && <div className="bg-palette-base" />}
         <div className="bg-overlay-dark" />
+        {(coverMode === 'color' || coverMode === 'palette' || coverMode === 'blend') && <div className="bg-noise" />}
         {coverMode === 'prism' && (
           <>
             <span className="bg-prism bg-prism-1" />

@@ -22,6 +22,10 @@ export interface LyricVisualSettings {
   wordRise: number;
   /** 三句布局：stacked = 依次在上；offset = 上下错落。 */
   lyricLayout: 'stacked' | 'offset';
+  /** 歌词取色源：cover = 封面自动取色；custom = 自定义基色。 */
+  lyricColorSource: 'cover' | 'custom';
+  /** 自定义基色（hex）。 */
+  customColor: string;
 }
 
 interface LyricsLayerProps {
@@ -486,6 +490,9 @@ export function LyricsLayer({
             if (cached === undefined || Math.abs(cached - wp) > 0.0005) {
               wpCacheRef.current.set(key, wp);
               wEl.style.setProperty('--wp', wp.toFixed(3));
+              if (wEl.style.getPropertyValue('--feather') !== '0.03') {
+                wEl.style.setProperty('--feather', '0.03');
+              }
             }
           }
         } else if (line && line.text) {
@@ -505,6 +512,9 @@ export function LyricsLayer({
             if (cached === undefined || Math.abs(cached - wp) > 0.0005) {
               wpCacheRef.current.set(key, wp);
               wEl.style.setProperty('--wp', wp.toFixed(3));
+              if (wEl.style.getPropertyValue('--feather') !== '0.055') {
+                wEl.style.setProperty('--feather', '0.055');
+              }
             }
           }
         }

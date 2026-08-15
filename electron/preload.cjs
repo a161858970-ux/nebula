@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   spotifyLoginStatus: () => ipcRenderer.invoke('nebula:login:spotify:status'),
   qqLoginWindow: () => ipcRenderer.invoke('nebula:login:qq:window'),
   openLocalDirectory: () => ipcRenderer.invoke('nebula:open-local-directory'),
+  wallpaperList: () => ipcRenderer.invoke('nebula:wallpaper:list'),
+  wallpaperSet: (id) => ipcRenderer.invoke('nebula:wallpaper:set', { id }),
   setCookie: (platform, cookie, token, nickname) =>
     ipcRenderer.invoke('nebula:cookie:set', { platform, cookie, token, nickname }),
   getCookie: (platform) => ipcRenderer.invoke('nebula:cookie:get', { platform }),

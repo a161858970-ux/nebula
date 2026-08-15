@@ -65,6 +65,23 @@ export interface DesktopAccountInfo {
   isSvip?: boolean;
 }
 
+export interface DesktopWallpaperItem {
+  id: string;
+  title: string;
+  projectType: string;
+  mediaType: 'video' | 'image' | '';
+  playable: boolean;
+  enginePlayable: boolean;
+  previewOnly: boolean;
+  hasPreview: boolean;
+  source: string;
+  previewUrl: string;
+}
+
+export type DesktopWallpaperSetResult =
+  | { url: string; type: 'video' | 'image' }
+  | { unsupported: true; reason: string };
+
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
 export interface DesktopApi {
@@ -86,6 +103,8 @@ export interface DesktopApi {
   spotifyLoginStatus: () => IpcResult<boolean>;
   qqLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
+  wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;
+  wallpaperSet: (id: string) => IpcResult<DesktopWallpaperSetResult>;
   setCookie: (platform: string, cookie: string, token?: string, nickname?: string) => IpcResult<boolean>;
   getCookie: (platform: string) => IpcResult<unknown>;
   clearCookie: (platform: string) => IpcResult<boolean>;

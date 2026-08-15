@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -21,10 +21,25 @@ const {
   qishuiLoginAdapter,
   AudioProxy,
   LyricCache,
+  WallpaperLibrary,
   probeAudioUrl,
   normalizeCookieHeader,
   validatePlatformCookie,
 } = require('../dist-main/index.cjs');
+
+// wallpaper:// 自定义协议（壁纸预览/媒体服务，支持 Range）
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'wallpaper',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -337,6 +352,8 @@ app.whenReady().then(() => {
   // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
   const lyricCache = new LyricCache(app.getPath('userData'));
   const lyricService = new LyricService(adapters, lyricCache);
+  const wallpaperLibrary = new WallpaperLibrary();
+  protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
   const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
 
@@ -385,6 +402,7 @@ app.whenReady().then(() => {
     audioProxy,
     spotifyOAuth: createSpotifyOAuth(cookies),
     qqLoginWindow: () => createQqLoginWindow(cookies),
+    wallpaperLibrary,
     // 退出登录时同步清空 QQ 官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。
     onCookieClear: async (platform) => {

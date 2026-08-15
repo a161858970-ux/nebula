@@ -7,6 +7,7 @@ import type { LyricService } from './services/lyricService';
 import type { Platform, Track } from './types';
 import type { LoginAdapter } from './login/index';
 import type { AudioProxy } from './audioProxy';
+import type { WallpaperLibrary } from './services/wallpaperLibrary';
 import { normalizeCookieHeader, validatePlatformCookie } from './cookieStore';
 
 /** 仅依赖 ipcMain.handle 形状，避免在纯 Node 冒烟测试中引入 electron。 */
@@ -26,6 +27,7 @@ export interface IpcDeps {
   qqLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   /** Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions). */
   onCookieClear?: (platform: Platform) => Promise<void> | void;
+  wallpaperLibrary?: WallpaperLibrary;
 }
 
 export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
@@ -82,6 +84,21 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   });
   safe('nebula:lyric', async ({ track }: { track: Track }) => deps.lyricService.fetchLyric(track));
   safe('nebula:comments', async ({ track }: { track: Track }) => deps.lyricService.fetchComments(track));
+
+  safe('nebula:wallpaper:list', async () => {
+    const lib = deps.wallpaperLibrary;
+    if (!lib) throw new Error('wallpaper 库不可用');
+    const items = await lib.list();
+    return items.map((it) => ({
+      ...it,
+      previewUrl: it.hasPreview ? `wallpaper://preview/${it.id}?token=${lib.token}` : '',
+    }));
+  });
+  safe('nebula:wallpaper:set', async ({ id }: { id: string }) => {
+    const lib = deps.wallpaperLibrary;
+    if (!lib) throw new Error('wallpaper 库不可用');
+    return lib.setBackground(String(id));
+  });
 
   safe('nebula:cookie:set', async ({ platform, cookie, token, nickname }: { platform: Platform; cookie: string; token?: string; nickname?: string }) => {
     const normalized = normalizeCookieHeader(cookie);

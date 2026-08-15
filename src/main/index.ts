@@ -17,6 +17,7 @@ export * from './adapters/spotifyAdapter';
 export * from './services/songResolver';
 export * from './services/lyricService';
 export * from './services/lyricCache';
+export * from './services/wallpaperLibrary';
 export * from './services/qqRights';
 export * from './login/index';
 export { registerIpcHandlers } from './ipc';

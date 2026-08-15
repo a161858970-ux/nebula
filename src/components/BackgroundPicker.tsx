@@ -9,15 +9,25 @@ interface BackgroundPickerProps {
   onSelect: (s: BackgroundSetting) => void;
   onFile: (f: File) => void;
   onCoverMode: (m: CoverBgMode) => void;
+  onOpenWallpapers: () => void;
 }
 
 const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
-  { id: 'frosted', name: '磨砂模糊' },
-  { id: 'cinematic', name: '暗调融合' },
-  { id: 'prism', name: '流光粒子' },
+  { id: 'fill', name: '原图直铺' },
+  { id: 'frosted', name: '磨砂暗化' },
+  { id: 'blend', name: '混合层' },
+  { id: 'color', name: '纯色纹理' },
+  { id: 'palette', name: '仅取色' },
 ];
 
-export function BackgroundPicker({ setting, coverMode, onSelect, onFile, onCoverMode }: BackgroundPickerProps) {
+export function BackgroundPicker({
+  setting,
+  coverMode,
+  onSelect,
+  onFile,
+  onCoverMode,
+  onOpenWallpapers,
+}: BackgroundPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const coverActive = setting.type === 'cover';
 
@@ -38,6 +48,9 @@ export function BackgroundPicker({ setting, coverMode, onSelect, onFile, onCover
       ))}
       <button className="bg-upload" onClick={() => inputRef.current?.click()}>
         上传图片 / 视频背景
+      </button>
+      <button className="bg-upload" onClick={onOpenWallpapers}>
+        导入 Wallpaper 壁纸
       </button>
       <button
         className={`bg-cover${coverActive ? ' active' : ''}`}

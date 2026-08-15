@@ -33,6 +33,9 @@ interface AccountsDrawerProps {
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
   onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
+  onLyricColorSource: (s: LyricVisualSettings['lyricColorSource']) => void;
+  onCustomColor: (c: string) => void;
+  onOpenWallpapers: () => void;
 }
 
 interface LyricSettingsProps {
@@ -44,6 +47,8 @@ interface LyricSettingsProps {
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
   onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
+  onLyricColorSource: (s: LyricVisualSettings['lyricColorSource']) => void;
+  onCustomColor: (c: string) => void;
 }
 
 /** 歌词设置：字号 / 高亮风格 / 逐字开关。 */
@@ -56,6 +61,8 @@ function LyricSettings({
   onCurrentScale,
   onWordRise,
   onLyricLayout,
+  onLyricColorSource,
+  onCustomColor,
 }: LyricSettingsProps) {
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   return (
@@ -138,6 +145,34 @@ function LyricSettings({
           </button>
         </div>
       </div>
+      <div className="ls-row">
+        <span>歌词取色</span>
+        <div className="ls-seg">
+          <button
+            className={setting.lyricColorSource === 'cover' ? 'active' : ''}
+            onClick={() => onLyricColorSource('cover')}
+          >
+            封面取色
+          </button>
+          <button
+            className={setting.lyricColorSource === 'custom' ? 'active' : ''}
+            onClick={() => onLyricColorSource('custom')}
+          >
+            自定义
+          </button>
+        </div>
+      </div>
+      {setting.lyricColorSource === 'custom' && (
+        <label className="ls-row">
+          <span>基色</span>
+          <input
+            type="color"
+            value={setting.customColor}
+            onChange={(e) => onCustomColor(e.target.value)}
+            style={{ width: 46, height: 26, border: 'none', background: 'none', cursor: 'pointer' }}
+          />
+        </label>
+      )}
       <div className="ls-row">
         <span>悬浮层次</span>
         <div className="ls-seg">
@@ -398,6 +433,9 @@ export function AccountsDrawer({
   onCurrentScale,
   onWordRise,
   onLyricLayout,
+  onLyricColorSource,
+  onCustomColor,
+  onOpenWallpapers,
 }: AccountsDrawerProps) {
   const info = platforms.find((p) => p.platform === selectedPlatform);
 
@@ -429,9 +467,18 @@ export function AccountsDrawer({
           onCurrentScale={onCurrentScale}
           onWordRise={onWordRise}
           onLyricLayout={onLyricLayout}
+          onLyricColorSource={onLyricColorSource}
+          onCustomColor={onCustomColor}
         />
       ) : tab === 'background' ? (
-        <BackgroundPicker setting={bgSetting} coverMode={coverMode} onSelect={onSelectBg} onFile={onFile} onCoverMode={onCoverMode} />
+        <BackgroundPicker
+          setting={bgSetting}
+          coverMode={coverMode}
+          onSelect={onSelectBg}
+          onFile={onFile}
+          onCoverMode={onCoverMode}
+          onOpenWallpapers={onOpenWallpapers}
+        />
       ) : (
         <div className="accounts-body">
           <div className="accounts-left">

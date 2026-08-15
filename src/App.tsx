@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
+import type { CoverBgMode } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
 import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
@@ -8,6 +9,7 @@ import { NowPlayingPanel } from './components/NowPlayingPanel';
 import { TopBar } from './components/TopBar';
 import { AccountsDrawer, type DrawerTab } from './components/AccountsDrawer';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
+import { WallpaperPicker } from './components/WallpaperPicker';
 import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
@@ -20,6 +22,16 @@ import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
 import { loadBackground, saveBackground } from './lib/backgrounds';
 import type { BackgroundSetting } from './lib/backgrounds';
 import { DEFAULT_AMBIENT, PRESET_AMBIENT, applyAmbient, sampleMedia } from './lib/bgSampler';
+import {
+  SILVER_BLUE,
+  coverCssVars,
+  lyricPaletteCssVars,
+  paletteFromBaseColor,
+  paletteFromSample,
+  sampleCover,
+  type CoverSample,
+  type LyricPalette,
+} from './lib/coverColors';
 import { initGlassGlow, registerProximity, unregisterProximity } from './lib/glassGlow';
 import { filterCreditLines, mergeWordLyrics, type LyricLineUI } from './lib/lyrics';
 import { generateTracks } from './lib/catalog';
@@ -28,6 +40,7 @@ import { mulberry32 } from './lib/rng';
 import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from './lib/search';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack } from './lib/playlist/ipcClient';
 import type { DesktopLoginPlatform, DesktopPlaylistSummary } from './lib/playlist/ipcClient';
+import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { emptyAccount, type AccountState } from './lib/accounts';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -116,6 +129,8 @@ export default function App() {
     let currentScale = 1.22;
     let wordRise = 4;
     let lyricLayout: LyricVisualSettings['lyricLayout'] = 'stacked';
+    let lyricColorSource: LyricVisualSettings['lyricColorSource'] = 'cover';
+    let customColor = '#3aa0ff';
     try {
       const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
       if (s) {
@@ -127,16 +142,32 @@ export default function App() {
         if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
         if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
         if (p.lyricLayout === 'stacked' || p.lyricLayout === 'offset') lyricLayout = p.lyricLayout;
+        if (p.lyricColorSource === 'cover' || p.lyricColorSource === 'custom') lyricColorSource = p.lyricColorSource;
+        if (typeof p.customColor === 'string' && /^#?[0-9a-f]{6}$/i.test(p.customColor)) customColor = p.customColor;
       }
     } catch {
       /* 用默认值 */
     }
-    return { fontSize, highlightStyle, wordHighlight, layerMode, currentScale, wordRise, lyricLayout };
+    return {
+      fontSize,
+      highlightStyle,
+      wordHighlight,
+      layerMode,
+      currentScale,
+      wordRise,
+      lyricLayout,
+      lyricColorSource,
+      customColor,
+    };
   });
   const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
-  const [bgCoverMode, setBgCoverMode] = useState<'frosted' | 'cinematic' | 'prism'>(() => {
+  const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
     const m = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.bg-cover-mode') : null;
-    return m === 'cinematic' || m === 'prism' ? m : 'frosted';
+    if (m === 'fill' || m === 'frosted' || m === 'color' || m === 'palette' || m === 'blend' || m === 'prism') {
+      return m;
+    }
+    if (m === 'cinematic') return 'blend';
+    return 'frosted';
   });
 
   // ---------- 多平台账号状态（可并行登录） ----------
@@ -145,6 +176,7 @@ export default function App() {
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('accounts');
   const [drawerPlatform, setDrawerPlatform] = useState('netease');
   const [localBusy, setLocalBusy] = useState(false);
+  const [wallpaperOpen, setWallpaperOpen] = useState(false);
 
   // ---------- 边缘感应面板 ----------
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
@@ -527,6 +559,36 @@ export default function App() {
     };
   }, [bgSetting, currentCover]);
 
+  // 歌词赋色：封面自动取色 / 自定义基色 → 写入 CSS 变量（primary/secondary/highlight）
+  useEffect(() => {
+    let cancelled = false;
+    const apply = (palette: LyricPalette, sample: CoverSample | null): void => {
+      const root = document.documentElement;
+      const vars = { ...lyricPaletteCssVars(palette), ...coverCssVars(sample) };
+      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    };
+    if (lyricSettings.lyricColorSource === 'custom') {
+      apply(paletteFromBaseColor(lyricSettings.customColor), null);
+      return;
+    }
+    const src = playerState.song?.cover;
+    if (!src) {
+      apply(SILVER_BLUE, null);
+      return;
+    }
+    sampleCover(src)
+      .then((s) => {
+        if (cancelled) return;
+        apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
+      })
+      .catch(() => {
+        if (!cancelled) apply(SILVER_BLUE, null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [playerState.song?.cover, lyricSettings.lyricColorSource, lyricSettings.customColor]);
+
   // 歌词加载：随当前歌曲变化拉取
   useEffect(() => {
     const song = playerState.song;
@@ -829,7 +891,15 @@ export default function App() {
     (m: LyricVisualSettings['lyricLayout']) => persistLyricSettings({ ...lyricSettings, lyricLayout: m }),
     [lyricSettings, persistLyricSettings],
   );
-  const handleCoverMode = useCallback((m: 'frosted' | 'cinematic' | 'prism') => {
+  const handleLyricColorSource = useCallback(
+    (s: LyricVisualSettings['lyricColorSource']) => persistLyricSettings({ ...lyricSettings, lyricColorSource: s }),
+    [lyricSettings, persistLyricSettings],
+  );
+  const handleCustomColor = useCallback(
+    (c: string) => persistLyricSettings({ ...lyricSettings, customColor: c }),
+    [lyricSettings, persistLyricSettings],
+  );
+  const handleCoverMode = useCallback((m: CoverBgMode) => {
     setBgCoverMode(m);
     try {
       localStorage.setItem('music-nebula.bg-cover-mode', m);
@@ -837,6 +907,18 @@ export default function App() {
       /* ignore */
     }
   }, []);
+
+  const handleWallpaperApply = useCallback(
+    (_item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => {
+      if (!('url' in result) || !('type' in result)) {
+        setWallpaperOpen(false);
+        return;
+      }
+      setBgSetting({ type: result.type, url: result.url });
+      setWallpaperOpen(false);
+    },
+    [],
+  );
 
   const handleBgFile = useCallback((file: File) => {
     if (file.type.startsWith('video/')) {
@@ -967,6 +1049,9 @@ export default function App() {
         onCurrentScale={handleCurrentScale}
         onWordRise={handleWordRise}
         onLyricLayout={handleLyricLayout}
+        onLyricColorSource={handleLyricColorSource}
+        onCustomColor={handleCustomColor}
+        onOpenWallpapers={() => setWallpaperOpen(true)}
       />
 
       <PlaylistSidebar
@@ -1018,6 +1103,9 @@ export default function App() {
           onToggleTranslate={handleToggleTranslate}
           onSeek={(t) => audioPlayer.seek(t)}
         />
+      )}
+      {wallpaperOpen && (
+        <WallpaperPicker onClose={() => setWallpaperOpen(false)} onApply={handleWallpaperApply} />
       )}
     </main>
   );
