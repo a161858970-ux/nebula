@@ -32,6 +32,7 @@ interface AccountsDrawerProps {
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
+  onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
 }
 
 interface LyricSettingsProps {
@@ -42,6 +43,7 @@ interface LyricSettingsProps {
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
+  onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
 }
 
 /** 歌词设置：字号 / 高亮风格 / 逐字开关。 */
@@ -53,6 +55,7 @@ function LyricSettings({
   onLayerMode,
   onCurrentScale,
   onWordRise,
+  onLyricLayout,
 }: LyricSettingsProps) {
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   return (
@@ -118,6 +121,23 @@ function LyricSettings({
         />
         <em>{setting.wordRise}px</em>
       </label>
+      <div className="ls-row">
+        <span>三句布局</span>
+        <div className="ls-seg">
+          <button
+            className={setting.lyricLayout === 'stacked' ? 'active' : ''}
+            onClick={() => onLyricLayout('stacked')}
+          >
+            上下堆叠
+          </button>
+          <button
+            className={setting.lyricLayout === 'offset' ? 'active' : ''}
+            onClick={() => onLyricLayout('offset')}
+          >
+            上下错落
+          </button>
+        </div>
+      </div>
       <div className="ls-row">
         <span>悬浮层次</span>
         <div className="ls-seg">
@@ -377,6 +397,7 @@ export function AccountsDrawer({
   onLayerMode,
   onCurrentScale,
   onWordRise,
+  onLyricLayout,
 }: AccountsDrawerProps) {
   const info = platforms.find((p) => p.platform === selectedPlatform);
 
@@ -407,6 +428,7 @@ export function AccountsDrawer({
           onLayerMode={onLayerMode}
           onCurrentScale={onCurrentScale}
           onWordRise={onWordRise}
+          onLyricLayout={onLyricLayout}
         />
       ) : tab === 'background' ? (
         <BackgroundPicker setting={bgSetting} coverMode={coverMode} onSelect={onSelectBg} onFile={onFile} onCoverMode={onCoverMode} />

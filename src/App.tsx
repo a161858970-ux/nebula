@@ -115,6 +115,7 @@ export default function App() {
     let layerMode: LyricVisualSettings['layerMode'] = 'under';
     let currentScale = 1.22;
     let wordRise = 4;
+    let lyricLayout: LyricVisualSettings['lyricLayout'] = 'stacked';
     try {
       const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
       if (s) {
@@ -125,11 +126,12 @@ export default function App() {
         if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
         if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
         if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
+        if (p.lyricLayout === 'stacked' || p.lyricLayout === 'offset') lyricLayout = p.lyricLayout;
       }
     } catch {
       /* 用默认值 */
     }
-    return { fontSize, highlightStyle, wordHighlight, layerMode, currentScale, wordRise };
+    return { fontSize, highlightStyle, wordHighlight, layerMode, currentScale, wordRise, lyricLayout };
   });
   const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
   const [bgCoverMode, setBgCoverMode] = useState<'frosted' | 'cinematic' | 'prism'>(() => {
@@ -823,6 +825,10 @@ export default function App() {
     (n: number) => persistLyricSettings({ ...lyricSettings, wordRise: n }),
     [lyricSettings, persistLyricSettings],
   );
+  const handleLyricLayout = useCallback(
+    (m: LyricVisualSettings['lyricLayout']) => persistLyricSettings({ ...lyricSettings, lyricLayout: m }),
+    [lyricSettings, persistLyricSettings],
+  );
   const handleCoverMode = useCallback((m: 'frosted' | 'cinematic' | 'prism') => {
     setBgCoverMode(m);
     try {
@@ -960,6 +966,7 @@ export default function App() {
         onLayerMode={handleLayerMode}
         onCurrentScale={handleCurrentScale}
         onWordRise={handleWordRise}
+        onLyricLayout={handleLyricLayout}
       />
 
       <PlaylistSidebar
