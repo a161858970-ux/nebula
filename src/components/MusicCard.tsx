@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useState, type MouseEvent } from 'react';
 import type { CSSProperties } from 'react';
 import { cardScreenPos } from '../lib/layout';
 import type { CardSpec, LayoutMetrics } from '../lib/layout';
@@ -14,6 +14,7 @@ interface MusicCardProps {
   isCurrent: boolean;
   isFailed: boolean;
   onPlay: (songId: number) => void;
+  onContextMenu?: (e: MouseEvent, track: CardSpec['track']) => void;
   onHoverChange: (id: number, hovered: boolean) => void;
   registerEl: (id: number, el: HTMLElement | null) => void;
 }
@@ -28,6 +29,7 @@ function MusicCardImpl({
   isCurrent,
   isFailed,
   onPlay,
+  onContextMenu,
   onHoverChange,
   registerEl,
 }: MusicCardProps) {
@@ -62,6 +64,7 @@ function MusicCardImpl({
       onClick={() => onPlay(card.track.id)}
       onPointerEnter={() => onHoverChange(card.id, true)}
       onPointerLeave={() => onHoverChange(card.id, false)}
+      onContextMenu={(e) => onContextMenu?.(e, track)}
     >
       <div
         className="cover"

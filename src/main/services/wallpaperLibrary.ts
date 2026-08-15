@@ -22,6 +22,7 @@ export interface WallpaperItem {
   previewOnly: boolean;
   hasPreview: boolean;
   source: string;
+  workshopId: string;
 }
 
 interface Record_ {
@@ -220,6 +221,11 @@ async function indexProject(root: string, source: string): Promise<{ item: Wallp
   const mediaExt = path.extname(media).toLowerCase();
   const mediaType: 'video' | 'image' | '' = VIDEO_EXT.has(mediaExt) ? 'video' : IMAGE_EXT.has(mediaExt) ? 'image' : '';
   const id = opaqueId(root);
+  const workshopId =
+    /^\d{5,32}$/.test(String(project.workshopid ?? project.workshopId ?? project.publishedfileid ?? '')) ||
+    /^\d{5,32}$/.test(path.basename(root))
+      ? String(project.workshopid ?? project.workshopId ?? project.publishedfileid ?? path.basename(root))
+      : '';
   return {
     item: {
       id,
@@ -231,6 +237,7 @@ async function indexProject(root: string, source: string): Promise<{ item: Wallp
       previewOnly: !media && !scenePackage,
       hasPreview: !!preview,
       source,
+      workshopId,
     },
     record: { id, projectRoot: root, media, preview, scenePackage },
   };
@@ -239,6 +246,7 @@ async function indexProject(root: string, source: string): Promise<{ item: Wallp
 export class WallpaperLibrary {
   private index = new Map<string, Record_>();
   private snapshot: { at: number; items: WallpaperItem[] } | null = null;
+  private weInstallRoot = '';
   readonly token = crypto.randomBytes(16).toString('hex');
 
   async list(): Promise<WallpaperItem[]> {
@@ -250,6 +258,9 @@ export class WallpaperLibrary {
       for (const container of knownContainers(root)) {
         if (!(await isDirectory(container)) || seen.has(pathKey(container))) continue;
         seen.add(pathKey(container));
+        if (!this.weInstallRoot && /wallpaper_engine[\\/]projects/i.test(container)) {
+          this.weInstallRoot = path.dirname(path.dirname(container));
+        }
         for (const projectRoot of await directProjectDirs(container)) {
           const indexed = await indexProject(projectRoot, /workshop[\\/]content/i.test(container) ? 'workshop' : 'local');
           if (!indexed || index.has(indexed.item.id)) continue;
@@ -294,6 +305,19 @@ export class WallpaperLibrary {
     }
     if (record.scenePackage) return { unsupported: true, reason: '场景壁纸需 Wallpaper Engine 运行' };
     return { unsupported: true, reason: '网页/交互壁纸暂不支持' };
+  }
+
+  /** 是否检测到 Wallpaper Engine 安装（可启动）。 */
+  wallpapersEngineInstalled(): boolean {
+    return !!this.weInstallRoot;
+  }
+
+  wallpapersEngineLaunchUrl(): string {
+    return 'steam://rungameid/431960';
+  }
+
+  resolveMediaUrl(id: string, kind: 'media' | 'preview'): string {
+    return this.record(id) ? `wallpaper://${kind}/${id}?token=${this.token}` : '';
   }
 
   /** wallpaper:// 协议处理：preview/media + Range。 */

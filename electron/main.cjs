@@ -417,6 +417,13 @@ app.whenReady().then(() => {
     },
   });
   ipcMain.handle('nebula:open-local-directory', handleOpenLocalDirectory);
+  ipcMain.handle('nebula:open-external', (_event, payload) => {
+    const url = String(payload?.url ?? '');
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^(javascript|data):/i.test(url)) {
+      return shell.openExternal(url);
+    }
+    return false;
+  });
   setupRequestInterception();
   createWindow();
 

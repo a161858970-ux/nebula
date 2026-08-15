@@ -304,11 +304,11 @@ async function main() {
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: '背景', exact: true }).click();
   await page.waitForTimeout(300);
-  await page.locator('.bg-thumb.bg-aurora').click();
+  // 预设背景已移除：封面背景为默认；无歌单时回退隐藏的午夜星空
+  await page.locator('.bg-cover').click();
   await page.waitForTimeout(300);
-  log('切换极光背景', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-aurora')));
+  log('封面背景(无封面→午夜备用)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-midnight')));
 
-  await page.locator('.bg-thumb.bg-midnight').click();
   await page.waitForTimeout(200);
   await page.setInputFiles('input[type="file"]', testPng);
   await page.waitForFunction(() => {
@@ -320,11 +320,10 @@ async function main() {
     return img ? `${img.naturalWidth}x${img.naturalHeight}` : 'none';
   }));
 
-  await page.locator('.bg-thumb.bg-nebula').click();
   await page.waitForTimeout(200);
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(1200);
-  log('刷新后背景持久化(应为 nebula)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-nebula')));
+  log('刷新后背景存在(默认封面/午夜备用)', await page.evaluate(() => !!document.querySelector('.bg-layer')));
 
   // ---------- 10) 歌单导入与播放器 ----------
   // 10a. 导入演示歌单（输入留空）

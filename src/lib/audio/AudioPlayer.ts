@@ -130,6 +130,47 @@ class AudioPlayer {
     this.loadAtOrder(this.pos);
   }
 
+  /** 恢复上次会话：设置当前歌曲与队列，但不自动播放、不加载音源。 */
+  restore(track: Track, queue?: Track[]): void {
+    if (queue && queue.length) {
+      this.queue = queue;
+    }
+    if (!this.queue.length) this.queue = [track];
+    this.order = this.buildIdentityOrder();
+    const idx = this.queue.findIndex((t) => t.id === track.id);
+    this.pos = idx < 0 ? 0 : idx;
+    this.state.song = this.queue[this.pos] ?? track;
+    this.state.currentTime = 0;
+    this.state.duration = this.state.song.duration ?? 0;
+    this.state.playing = false;
+    this.state.loading = false;
+    this.state.failed = false;
+    this.state.error = null;
+    this.emit();
+  }
+
+  /** 把歌曲插入到“下一首”播放位置（不打断当前播放）。 */
+  insertNext(track: Track): void {
+    if (!this.queue.length) {
+      this.queue = [track];
+      this.order = [0];
+      this.pos = 0;
+      this.state.song = track;
+      this.emit();
+      return;
+    }
+    let idx = this.queue.findIndex((t) => t.id === track.id);
+    if (idx < 0) {
+      idx = this.queue.length;
+      this.queue.push(track);
+    }
+    const existingAt = this.order.indexOf(idx);
+    if (existingAt >= 0) this.order.splice(existingAt, 1);
+    const curAt = this.order.indexOf(this.pos);
+    this.order.splice(curAt + 1, 0, idx);
+    this.emit();
+  }
+
   toggle(): void {
     if (!this.state.song) return;
     if (this.el.paused) {

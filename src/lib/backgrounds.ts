@@ -26,7 +26,6 @@ export function loadBackground(): BackgroundSetting {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw) as BackgroundSetting;
-      if (s.type === 'preset' && BACKGROUND_PRESETS.some((p) => p.id === s.id)) return s;
       if (
         (s.type === 'image' || s.type === 'video') &&
         typeof s.url === 'string' &&
@@ -39,7 +38,8 @@ export function loadBackground(): BackgroundSetting {
   } catch {
     /* localStorage 不可用时忽略 */
   }
-  return { type: 'preset', id: 'midnight' };
+  // 默认：封面混合层；无歌单时由 App 回退到隐藏的午夜星空
+  return { type: 'cover' };
 }
 
 export function saveBackground(setting: BackgroundSetting): void {

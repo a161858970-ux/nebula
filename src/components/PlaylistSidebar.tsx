@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
+import type { Track } from '../lib/catalog';
 import { ImportBar, type ImportStatus } from './ImportBar';
 
 interface PlaylistSidebarProps {
@@ -9,12 +10,18 @@ interface PlaylistSidebarProps {
   accounts: Record<string, AccountState>;
   importStatus: ImportStatus;
   importMessage: string;
+  songs: Track[];
+  currentPlaylist: { platform: string; id: string; name: string; cover: string } | null;
   onEnter: () => void;
   onLeave: () => void;
   onImportPlaylist: (platform: string, id: string) => void;
   onImportUrl: (url: string) => void;
   onGoLogin: (platform: string) => void;
   onRefreshAll: () => void;
+  onPlaySongFromList: (index: number) => void;
+  onPlayPlaylist: () => void;
+  onInsertNext: (track: Track) => void;
+  onSongContextMenu: (e: React.MouseEvent, track: Track) => void;
 }
 
 const PLATFORM_TABS = [
@@ -23,21 +30,35 @@ const PLATFORM_TABS = [
   { platform: 'kugou', name: '酷狗' },
 ] as const;
 
-/** 左侧边缘感应歌单面板：平台歌单导入 + 手动链接（与账号管理解耦）。 */
+/** 左侧边缘感应歌单面板：未导入歌单点击导入；已导入歌单点击展开歌曲队列。 */
 export function PlaylistSidebar({
   visible,
   platforms,
   accounts,
   importStatus,
   importMessage,
+  songs,
+  currentPlaylist,
   onEnter,
   onLeave,
   onImportPlaylist,
   onImportUrl,
   onGoLogin,
   onRefreshAll,
+  onPlaySongFromList,
+  onPlayPlaylist,
+  onSongContextMenu,
 }: PlaylistSidebarProps) {
   const [tab, setTab] = useState<'netease' | 'qq' | 'kugou' | 'manual'>('manual');
+  const [expanded, setExpanded] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!visible) setExpanded(false);
+  }, [visible]);
+
+  const isCurrent = (platform: string, id: string): boolean =>
+    !!currentPlaylist && currentPlaylist.platform === platform && currentPlaylist.id === id;
 
   return (
     <aside
@@ -94,21 +115,71 @@ export function PlaylistSidebar({
           }
           return (
             <div className="sidebar-playlists">
-              {account.playlists.map((pl) => (
-                <button
-                  key={pl.id}
-                  className="sidebar-playlist"
-                  onClick={() => onImportPlaylist(tab, pl.id)}
-                >
-                  {pl.cover ? (
-                    <img className="sidebar-playlist-cover" src={pl.cover} alt="" loading="lazy" />
-                  ) : (
-                    <span className="sidebar-playlist-cover is-ph" />
-                  )}
-                  <span className="sidebar-playlist-name">{pl.name}</span>
-                  <span className="sidebar-playlist-count">{pl.trackCount} 首</span>
-                </button>
-              ))}
+              {account.playlists.map((pl) => {
+                const current = isCurrent(tab, pl.id);
+                const showExpanded = current && expanded;
+                return (
+                  <div key={pl.id} className={`sidebar-pl-wrap${current ? ' is-current' : ''}`}>
+                    <button
+                      className="sidebar-playlist"
+                      onClick={() => {
+                        if (current) setExpanded((v) => !v);
+                        else onImportPlaylist(tab, pl.id);
+                      }}
+                    >
+                      {pl.cover ? (
+                        <img className="sidebar-playlist-cover" src={pl.cover} alt="" loading="lazy" />
+                      ) : (
+                        <span className="sidebar-playlist-cover is-ph" />
+                      )}
+                      <span className="sidebar-playlist-name">{pl.name}</span>
+                      <span className="sidebar-playlist-count">{pl.trackCount} 首</span>
+                      {current && <em className="pl-imported">已导入</em>}
+                    </button>
+                    {showExpanded && (
+                      <div className="pl-detail" ref={listRef}>
+                        <div className="pl-head">
+                          <img className="pl-head-cover" src={currentPlaylist!.cover || pl.cover} alt="" />
+                          <div className="pl-head-info">
+                            <span className="pl-head-name">{currentPlaylist!.name || pl.name}</span>
+                            <span className="pl-head-count">{songs.length} 首</span>
+                          </div>
+                          <button className="pl-head-btn" onClick={onPlayPlaylist} title="播放歌单">
+                            ▶ 播放歌单
+                          </button>
+                          <button
+                            className="pl-head-btn"
+                            onClick={() => listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                            title="回到顶部"
+                          >
+                            ⬆ 回到顶部
+                          </button>
+                        </div>
+                        <div className="pl-songs">
+                          {songs.map((song, i) => (
+                            <div
+                              key={`${song.source}:${song.sourceId ?? i}`}
+                              className="pl-song"
+                              onDoubleClick={() => onPlaySongFromList(i)}
+                              onContextMenu={(e) => onSongContextMenu(e, song)}
+                            >
+                              {song.cover ? (
+                                <img className="pl-song-cover" src={song.cover} alt="" loading="lazy" />
+                              ) : (
+                                <span className="pl-song-cover is-ph" />
+                              )}
+                              <div className="pl-song-meta">
+                                <span className="pl-song-title">{song.title}</span>
+                                <span className="pl-song-artist">{song.artist}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })()

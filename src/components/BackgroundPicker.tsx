@@ -1,5 +1,4 @@
 import { useRef } from 'react';
-import { BACKGROUND_PRESETS } from '../lib/backgrounds';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from './BackgroundLayer';
 
@@ -33,19 +32,6 @@ export function BackgroundPicker({
 
   return (
     <div className="bg-picker">
-      {BACKGROUND_PRESETS.map((p) => (
-        <button
-          key={p.id}
-          className={`bg-thumb ${p.layerClass}${
-            setting.type === 'preset' && setting.id === p.id ? ' active' : ''
-          }`}
-          onClick={() => onSelect({ type: 'preset', id: p.id })}
-          title={`${p.name}${p.dynamic ? '（动态）' : ''}`}
-        >
-          <span className="bg-thumb-label">{p.name}</span>
-          {p.dynamic && <span className="bg-thumb-dyn">动态</span>}
-        </button>
-      ))}
       <button className="bg-upload" onClick={() => inputRef.current?.click()}>
         上传图片 / 视频背景
       </button>

@@ -76,6 +76,7 @@ export interface DesktopWallpaperItem {
   hasPreview: boolean;
   source: string;
   previewUrl: string;
+  mediaUrl: string;
 }
 
 export type DesktopWallpaperSetResult =
@@ -103,7 +104,9 @@ export interface DesktopApi {
   spotifyLoginStatus: () => IpcResult<boolean>;
   qqLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
+  openExternal: (url: string) => IpcResult<boolean>;
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;
+  wallpaperInfo: () => IpcResult<{ weInstalled: boolean; weLaunchUrl: string }>;
   wallpaperSet: (id: string) => IpcResult<DesktopWallpaperSetResult>;
   setCookie: (platform: string, cookie: string, token?: string, nickname?: string) => IpcResult<boolean>;
   getCookie: (platform: string) => IpcResult<unknown>;

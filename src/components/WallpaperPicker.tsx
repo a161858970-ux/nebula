@@ -19,6 +19,9 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
   const [items, setItems] = useState<DesktopWallpaperItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [weInstalled, setWeInstalled] = useState(false);
+  const [weLaunchUrl, setWeLaunchUrl] = useState('');
+  const [hint, setHint] = useState('');
 
   useEffect(() => {
     if (!hasDesktopAPI()) {
@@ -40,16 +43,36 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    window.nebulaAPI!
+      .wallpaperInfo()
+      .then((res) => {
+        if (!cancelled && res.ok) {
+          setWeInstalled(res.data.weInstalled);
+          setWeLaunchUrl(res.data.weLaunchUrl);
+        }
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
 
   const apply = async (item: DesktopWallpaperItem): Promise<void> => {
+    setHint('');
     if (!hasDesktopAPI()) return;
     const res = await window.nebulaAPI!.wallpaperSet(item.id);
     if (!res.ok) {
       setError(res.error);
+      return;
+    }
+    if ('unsupported' in res.data) {
+      // 场景壁纸：启动 Wallpaper Engine（完整注入为独立子系统）
+      if (item.enginePlayable && weInstalled && weLaunchUrl) {
+        void window.nebulaAPI!.openExternal(weLaunchUrl);
+        setHint('已启动 Wallpaper Engine，请在 WE 中选择该壁纸应用');
+      } else {
+        setHint(res.data.reason);
+      }
       return;
     }
     onApply(item, res.data);
@@ -62,11 +85,12 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="wallpaper-panel glass">
+      <div className="wallpaper-panel glass" onPointerDown={(e) => e.stopPropagation()}>
         <button className="np-close" aria-label="关闭" onClick={onClose}>
           ×
         </button>
         <div className="wallpaper-head">Wallpaper Engine 壁纸库</div>
+        {hint && <div className="wallpaper-hint is-hint">{hint}</div>}
         {loading && <div className="wallpaper-hint">正在扫描本机壁纸…</div>}
         {error && <div className="wallpaper-hint is-error">{error}</div>}
         {!loading && !error && items.length === 0 && (
@@ -81,8 +105,8 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
               title={item.playable ? '点击设为背景' : kindLabel(item)}
             >
               <div className="wp-preview">
-                {item.playable && item.mediaType === 'video' && item.previewUrl ? (
-                  <video src={item.previewUrl} autoPlay muted loop playsInline />
+                {item.playable && item.mediaType === 'video' && item.mediaUrl ? (
+                  <video src={item.mediaUrl} autoPlay muted loop playsInline />
                 ) : item.previewUrl ? (
                   <img src={item.previewUrl} alt="" loading="lazy" />
                 ) : (

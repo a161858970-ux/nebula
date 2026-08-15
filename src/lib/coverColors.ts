@@ -143,26 +143,22 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** 从封面图片 URL 采样（每 8 像素一次，跳过 alpha<0.5）。 */
-export async function sampleCover(src: string): Promise<CoverSample | null> {
+function sampleFromDrawable(
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+  width: number,
+  height: number,
+): CoverSample | null {
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const im = new Image();
-      im.crossOrigin = 'anonymous';
-      im.onload = () => resolve(im);
-      im.onerror = () => reject(new Error('cover load failed'));
-      im.src = src;
-    });
     const maxDim = 480;
-    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const scale = Math.min(1, maxDim / Math.max(width, height));
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, w, h);
+    draw(ctx, w, h);
     const data = ctx.getImageData(0, 0, w, h).data;
 
     let best: [number, number, number] | null = null;
@@ -258,6 +254,33 @@ export async function sampleCover(src: string): Promise<CoverSample | null> {
   } catch {
     return null;
   }
+}
+
+/** 从封面图片 URL 采样（每 8 像素一次，跳过 alpha<0.5）。 */
+export async function sampleCover(src: string): Promise<CoverSample | null> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('cover load failed'));
+    im.src = src;
+  });
+  return sampleFromDrawable(
+    (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h),
+    img.naturalWidth || 1,
+    img.naturalHeight || 1,
+  );
+}
+
+/** 从当前背景媒体元素（img / video）采样。 */
+export async function sampleMediaElement(el: HTMLImageElement | HTMLVideoElement): Promise<CoverSample | null> {
+  const width = (el as HTMLVideoElement).videoWidth || (el as HTMLImageElement).naturalWidth || 1;
+  const height = (el as HTMLVideoElement).videoHeight || (el as HTMLImageElement).naturalHeight || 1;
+  return sampleFromDrawable(
+    (ctx, w, h) => ctx.drawImage(el, 0, 0, w, h),
+    width,
+    height,
+  );
 }
 
 export function coverCssVars(sample: CoverSample | null): Record<string, string> {

@@ -28,7 +28,6 @@ interface AccountsDrawerProps {
   lyricSettings: LyricVisualSettings;
   onFontSize: (n: number) => void;
   onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
-  onWordHighlight: (b: boolean) => void;
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
@@ -42,7 +41,6 @@ interface LyricSettingsProps {
   setting: LyricVisualSettings;
   onFontSize: (n: number) => void;
   onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
-  onWordHighlight: (b: boolean) => void;
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
   onCurrentScale: (n: number) => void;
   onWordRise: (n: number) => void;
@@ -56,7 +54,6 @@ function LyricSettings({
   setting,
   onFontSize,
   onHighlightStyle,
-  onWordHighlight,
   onLayerMode,
   onCurrentScale,
   onWordRise,
@@ -96,14 +93,6 @@ function LyricSettings({
           </button>
         </div>
       </div>
-      <label className="ls-row">
-        <span>逐字高亮</span>
-        <input
-          type="checkbox"
-          checked={setting.wordHighlight}
-          onChange={(e) => onWordHighlight(e.target.checked)}
-        />
-      </label>
       <label className="ls-row">
         <span>当前句放大</span>
         <input
@@ -428,7 +417,6 @@ export function AccountsDrawer({
   lyricSettings,
   onFontSize,
   onHighlightStyle,
-  onWordHighlight,
   onLayerMode,
   onCurrentScale,
   onWordRise,
@@ -462,7 +450,6 @@ export function AccountsDrawer({
           setting={lyricSettings}
           onFontSize={onFontSize}
           onHighlightStyle={onHighlightStyle}
-          onWordHighlight={onWordHighlight}
           onLayerMode={onLayerMode}
           onCurrentScale={onCurrentScale}
           onWordRise={onWordRise}

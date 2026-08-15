@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
 import type { CoverBgMode } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
@@ -29,6 +29,7 @@ import {
   paletteFromBaseColor,
   paletteFromSample,
   sampleCover,
+  sampleMediaElement,
   type CoverSample,
   type LyricPalette,
 } from './lib/coverColors';
@@ -38,7 +39,7 @@ import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
 import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from './lib/search';
-import { hasDesktopAPI, toBackendTrack, toFrontendTrack } from './lib/playlist/ipcClient';
+import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
 import type { DesktopLoginPlatform, DesktopPlaylistSummary } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { emptyAccount, type AccountState } from './lib/accounts';
@@ -124,7 +125,6 @@ export default function App() {
     const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
     let fontSize = 24;
     let highlightStyle: LyricVisualSettings['highlightStyle'] = 'sweep';
-    let wordHighlight = true;
     let layerMode: LyricVisualSettings['layerMode'] = 'under';
     let currentScale = 1.22;
     let wordRise = 4;
@@ -137,7 +137,6 @@ export default function App() {
         const p = JSON.parse(s) as Partial<LyricVisualSettings>;
         if (typeof p.fontSize === 'number' && p.fontSize >= 14 && p.fontSize <= maxFont) fontSize = p.fontSize;
         if (p.highlightStyle === 'sweep' || p.highlightStyle === 'float') highlightStyle = p.highlightStyle;
-        if (typeof p.wordHighlight === 'boolean') wordHighlight = p.wordHighlight;
         if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
         if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
         if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
@@ -151,7 +150,6 @@ export default function App() {
     return {
       fontSize,
       highlightStyle,
-      wordHighlight,
       layerMode,
       currentScale,
       wordRise,
@@ -167,7 +165,7 @@ export default function App() {
       return m;
     }
     if (m === 'cinematic') return 'blend';
-    return 'frosted';
+    return 'blend';
   });
 
   // ---------- 多平台账号状态（可并行登录） ----------
@@ -177,6 +175,13 @@ export default function App() {
   const [drawerPlatform, setDrawerPlatform] = useState('netease');
   const [localBusy, setLocalBusy] = useState(false);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const [currentPlaylist, setCurrentPlaylist] = useState<{
+    platform: string;
+    id: string;
+    name: string;
+    cover: string;
+  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null);
 
   // ---------- 边缘感应面板 ----------
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
@@ -559,7 +564,7 @@ export default function App() {
     };
   }, [bgSetting, currentCover]);
 
-  // 歌词赋色：封面自动取色 / 自定义基色 → 写入 CSS 变量（primary/secondary/highlight）
+  // 歌词赋色：跟随当前背景（封面/自定义上传/Wallpaper）自动取色，或自定义基色
   useEffect(() => {
     let cancelled = false;
     const apply = (palette: LyricPalette, sample: CoverSample | null): void => {
@@ -571,23 +576,53 @@ export default function App() {
       apply(paletteFromBaseColor(lyricSettings.customColor), null);
       return;
     }
-    const src = playerState.song?.cover;
-    if (!src) {
-      apply(SILVER_BLUE, null);
-      return;
+    const media = document.querySelector<HTMLImageElement | HTMLVideoElement>('.bg-media');
+    const trySample = (): void => {
+      if (cancelled) return;
+      if (
+        media &&
+        (media instanceof HTMLImageElement
+          ? media.complete && media.naturalWidth > 0
+          : media.readyState >= 1)
+      ) {
+        sampleMediaElement(media)
+          .then((s) => {
+            if (!cancelled) apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
+          })
+          .catch(() => {
+            if (!cancelled) apply(SILVER_BLUE, null);
+          });
+      } else {
+        apply(SILVER_BLUE, null);
+      }
+    };
+    if (!media) {
+      const src = playerState.song?.cover;
+      if (!src) {
+        apply(SILVER_BLUE, null);
+      } else {
+        sampleCover(src)
+          .then((s) => {
+            if (!cancelled) apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
+          })
+          .catch(() => {
+            if (!cancelled) apply(SILVER_BLUE, null);
+          });
+      }
+    } else {
+      trySample();
+      media.addEventListener('load', trySample);
+      media.addEventListener('loadeddata', trySample);
+      return () => {
+        cancelled = true;
+        media.removeEventListener('load', trySample);
+        media.removeEventListener('loadeddata', trySample);
+      };
     }
-    sampleCover(src)
-      .then((s) => {
-        if (cancelled) return;
-        apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
-      })
-      .catch(() => {
-        if (!cancelled) apply(SILVER_BLUE, null);
-      });
     return () => {
       cancelled = true;
     };
-  }, [playerState.song?.cover, lyricSettings.lyricColorSource, lyricSettings.customColor]);
+  }, [bgSetting, playerState.song?.cover, lyricSettings.lyricColorSource, lyricSettings.customColor]);
 
   // 歌词加载：随当前歌曲变化拉取
   useEffect(() => {
@@ -616,6 +651,42 @@ export default function App() {
       cancelled = true;
     };
   }, [playerState.song?.id, playerState.song?.sourceId]);
+
+  // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
+  useEffect(() => {
+    try {
+      if (!songs.length || songs[0]?.source === 'demo') return;
+      localStorage.setItem(
+        'music-nebula.session',
+        JSON.stringify({
+          tracks: songs.map((s) => toBackendTrack(s)),
+          currentId: playerState.song?.id,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [songs, playerState.song?.id]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('music-nebula.session');
+      if (!raw) return;
+      const s = JSON.parse(raw) as { tracks?: DesktopTrack[]; currentId?: number };
+      if (!s.tracks?.length) return;
+      const restored = s.tracks.map((t, i) => toFrontendTrack(t, i));
+      setSongs(restored);
+      setRevealedCount(restored.length);
+      revealedRef.current = restored.length;
+      visibleRef.current = new Set();
+      setVisibleIds([]);
+      const cur = restored.find((t) => t.id === s.currentId) ?? restored[0]!;
+      audioPlayer.restore(cur, restored);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 音质档位：随当前歌曲变化拉取可用列表（桌面版）
   useEffect(() => {
@@ -691,6 +762,7 @@ export default function App() {
       resetImportState();
       try {
         const { adapterName, songs, simulated, note } = await resolvePlaylist(url);
+        setCurrentPlaylist({ platform: adapterName, id: 'manual', name: '手动链接导入', cover: '' });
         beginImport(adapterName, songs, simulated, note);
       } catch (err) {
         setImportStatus('error');
@@ -708,6 +780,7 @@ export default function App() {
       try {
         const res = await window.nebulaAPI!.importPlaylistId(platform, id);
         if (!res.ok) throw new Error(res.error);
+        setCurrentPlaylist({ platform: res.data.platformName, id, name: res.data.name, cover: res.data.cover });
         beginImport(res.data.platformName, res.data.tracks.map((t, i) => toFrontendTrack(t, i)));
       } catch (err) {
         setImportStatus('error');
@@ -826,6 +899,38 @@ export default function App() {
     controller?.reset();
   }, []);
 
+  /** 歌单列表：双击播放某首 → 回到该歌曲卡片中心。 */
+  const playSongFromList = useCallback(
+    (index: number) => {
+      const song = songsRef.current[index];
+      if (!song) return;
+      audioPlayer.playSong(song, songsRef.current);
+      setNowPlayingOpen(false);
+      handleReset();
+    },
+    [handleReset],
+  );
+
+  const playPlaylistFromStart = useCallback(() => {
+    const list = songsRef.current;
+    if (!list.length) return;
+    audioPlayer.playSong(list[0]!, list);
+    setNowPlayingOpen(false);
+    handleReset();
+  }, [handleReset]);
+
+  const insertNextSong = useCallback((track: Track) => {
+    audioPlayer.insertNext(track);
+  }, []);
+
+  const openContextMenu = useCallback((e: MouseEvent, track: Track) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, track });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
   const handleToggleLike = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;
@@ -869,10 +974,6 @@ export default function App() {
   );
   const handleHighlightStyle = useCallback(
     (s: LyricVisualSettings['highlightStyle']) => persistLyricSettings({ ...lyricSettings, highlightStyle: s }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleWordHighlight = useCallback(
-    (b: boolean) => persistLyricSettings({ ...lyricSettings, wordHighlight: b }),
     [lyricSettings, persistLyricSettings],
   );
   const handleLayerMode = useCallback(
@@ -1001,6 +1102,7 @@ export default function App() {
               isCurrent={card.track.id === currentSongId}
               isFailed={failedIds.has(card.track.id)}
               onPlay={handleCardPlay}
+              onContextMenu={openContextMenu}
               onHoverChange={handleHoverChange}
               registerEl={registerEl}
             />
@@ -1044,7 +1146,6 @@ export default function App() {
         lyricSettings={lyricSettings}
         onFontSize={handleLyricFontSize}
         onHighlightStyle={handleHighlightStyle}
-        onWordHighlight={handleWordHighlight}
         onLayerMode={handleLayerMode}
         onCurrentScale={handleCurrentScale}
         onWordRise={handleWordRise}
@@ -1066,6 +1167,12 @@ export default function App() {
         onImportUrl={handleImport}
         onGoLogin={handleGoLogin}
         onRefreshAll={handleRefreshAll}
+        songs={songs}
+        currentPlaylist={currentPlaylist}
+        onPlaySongFromList={playSongFromList}
+        onPlayPlaylist={playPlaylistFromStart}
+        onInsertNext={insertNextSong}
+        onSongContextMenu={openContextMenu}
       />
 
       <button className="glass-btn center-btn" onClick={handleReset} aria-label="回到中心">
@@ -1106,6 +1213,22 @@ export default function App() {
       )}
       {wallpaperOpen && (
         <WallpaperPicker onClose={() => setWallpaperOpen(false)} onApply={handleWallpaperApply} />
+      )}
+      {contextMenu && (
+        <>
+          <div className="ctx-backdrop" onPointerDown={closeContextMenu} onContextMenu={(e) => e.preventDefault()} />
+          <div className="ctx-menu glass" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            <button
+              onClick={() => {
+                insertNextSong(contextMenu.track);
+                closeContextMenu();
+              }}
+            >
+              下一首播放
+            </button>
+            <button onClick={closeContextMenu}>取消</button>
+          </div>
+        </>
       )}
     </main>
   );

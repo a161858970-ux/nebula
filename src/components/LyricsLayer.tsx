@@ -13,7 +13,6 @@ export interface FrameBus {
 export interface LyricVisualSettings {
   fontSize: number;
   highlightStyle: 'sweep' | 'float';
-  wordHighlight: boolean;
   /** 悬浮层次：under = 卡片云之下（Z1）；over = 覆盖在卡片云之上。 */
   layerMode: 'under' | 'over';
   /** 当前句放大系数（可 DIY）。 */
@@ -158,6 +157,7 @@ export function LyricsLayer({
   const prevLinesRef = useRef(lines);
   const songKeyRef = useRef(songKey);
   const linesReadyRef = useRef(true);
+  const styleRef = useRef(settings.highlightStyle);
   const propMsRef = useRef(currentTime * 1000);
   const smoothTRef = useRef(currentTime * 1000);
   const lastTRef = useRef(currentTime * 1000);
@@ -189,6 +189,11 @@ export function LyricsLayer({
     wpCacheRef.current.clear();
     lastKeysRef.current = '';
     linesReadyRef.current = true;
+  }
+  // 切换高亮模式：清空 --wp/--feather 写入缓存，强制全量重写
+  if (styleRef.current !== settings.highlightStyle) {
+    styleRef.current = settings.highlightStyle;
+    wpCacheRef.current.clear();
   }
 
   const playingRef = useRef(playing);
@@ -431,7 +436,7 @@ export function LyricsLayer({
           let tx = target.x;
           const ty = target.y;
           // 当前句：保护性微调（最后 25%–30% 时长冻结）
-          if (fl.role === 'current' && line && settings.wordHighlight && line.words?.length) {
+          if (fl.role === 'current' && line && line.words?.length) {
             const dur = line.duration ?? (lines[lineIdx + 1]?.timeMs != null ? lines[lineIdx + 1]!.timeMs - line.timeMs : 6000);
             const remaining = line.timeMs + dur - t;
             if (remaining > dur * 0.3) {
@@ -478,7 +483,7 @@ export function LyricsLayer({
         el.classList.toggle('is-current', fl.role === 'current');
 
         // 逐字高亮（仅 current；--wp 按需写）
-        const lineWords = line?.words && settings.wordHighlight && fl.role === 'current' ? line.words : undefined;
+        const lineWords = line?.words && fl.role === 'current' ? line.words : undefined;
         if (lineWords?.length) {
           for (let wi = 0; wi < lineWords.length; wi++) {
             const w = lineWords[wi]!;
@@ -490,9 +495,7 @@ export function LyricsLayer({
             if (cached === undefined || Math.abs(cached - wp) > 0.0005) {
               wpCacheRef.current.set(key, wp);
               wEl.style.setProperty('--wp', wp.toFixed(3));
-              if (wEl.style.getPropertyValue('--feather') !== '0.03') {
-                wEl.style.setProperty('--feather', '0.03');
-              }
+              wEl.style.setProperty('--feather', '0.03');
             }
           }
         } else if (line && line.text) {
@@ -512,9 +515,7 @@ export function LyricsLayer({
             if (cached === undefined || Math.abs(cached - wp) > 0.0005) {
               wpCacheRef.current.set(key, wp);
               wEl.style.setProperty('--wp', wp.toFixed(3));
-              if (wEl.style.getPropertyValue('--feather') !== '0.055') {
-                wEl.style.setProperty('--feather', '0.055');
-              }
+              wEl.style.setProperty('--feather', '0.055');
             }
           }
         }
@@ -532,7 +533,7 @@ export function LyricsLayer({
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, settings.wordHighlight, settings.currentScale, settings.lyricLayout]);
+  }, [lines, settings.currentScale, settings.lyricLayout, settings.highlightStyle]);
 
   // 换歌/清空时在绘制前清掉渲染列表
   useLayoutEffect(() => {
@@ -564,7 +565,7 @@ export function LyricsLayer({
       {activeKeys.map((lineIdx) => {
         const line = lines[lineIdx];
         if (!line) return null;
-        const useWords = settings.wordHighlight && !!line.words?.length;
+        const useWords = !!line.words?.length;
         const words = useWords
           ? line.words!
           : line.text

@@ -92,8 +92,13 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     return items.map((it) => ({
       ...it,
       previewUrl: it.hasPreview ? `wallpaper://preview/${it.id}?token=${lib.token}` : '',
+      mediaUrl: it.playable ? `wallpaper://media/${it.id}?token=${lib.token}` : '',
     }));
   });
+  safe('nebula:wallpaper:info', async () => ({
+    weInstalled: deps.wallpaperLibrary?.wallpapersEngineInstalled() ?? false,
+    weLaunchUrl: deps.wallpaperLibrary?.wallpapersEngineLaunchUrl() ?? '',
+  }));
   safe('nebula:wallpaper:set', async ({ id }: { id: string }) => {
     const lib = deps.wallpaperLibrary;
     if (!lib) throw new Error('wallpaper 库不可用');
