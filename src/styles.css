@@ -1635,7 +1635,12 @@ body {
 
 /* ?????????????? --wp ??? */
 .hl-float .fl-word {
-  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * 3px));
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--fl-hi);
+  opacity: calc(0.3 + 0.7 * var(--wp, 0));
+  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * var(--lyric-rise, 4px)));
   text-shadow: 0 0 14px rgba(var(--lyric-rgb, 245, 246, 250), 0.5);
 }
 

@@ -211,11 +211,10 @@ export function LyricsLayer({
       if (line?.text) return estimateWidth(line.text, settings.fontSize, 1) * scale;
       return 0;
     };
-    /** 水平安全区：右侧句末不触碰右边缘（当前句阈值更高），左侧对称收拢。 */
+    /** 水平安全区：左右对称（当前句略紧），宽句被夹到中心而非偏向一侧。 */
     const clampX = (x: number, role: Role, width: number, cw: number): number => {
-      const safeR = cw * (role === 'current' ? 0.12 : 0.1);
-      const safeL = cw * (role === 'current' ? 0.06 : 0.04);
-      return clamp(x, safeL, Math.max(safeL, cw - safeR - width));
+      const m = cw * (role === 'current' ? 0.08 : 0.1);
+      return clamp(x, m, Math.max(m, cw - m - width));
     };
     const roleTarget = (
       fl: Flight,
@@ -393,6 +392,10 @@ export function LyricsLayer({
         if (newRole !== fl.role) {
           fl.prevRole = fl.role;
           fl.role = newRole;
+          // 晋升当前句：水平偏移收窄到中心附近，避免视觉重心持续偏一侧
+          if (newRole === 'current') {
+            fl.xOff = (fl.xOff >= 0 ? 1 : -1) * cw * 0.03;
+          }
           if (newRole === 'leaving') {
             // 离开：左右 50%，斜向柔和飞出（1.0–1.4s）
             const dir = Math.random() < 0.5 ? -1 : 1;
