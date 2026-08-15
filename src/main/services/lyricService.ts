@@ -1,6 +1,6 @@
 import type { AdapterMap } from '../adapters/index';
-import type { CommentResult, Lyric, Track } from '../types';
-import { mergeLyric } from '../parsers/lyricParser';
+import type { AlbumSummary, ArtistInfo, CommentResult, Lyric, Platform, SongDetail, Track } from '../types';
+import { creditsFromLrc, mergeLyric } from '../parsers/lyricParser';
 import { matchScore } from './songResolver';
 import { LyricCache } from './lyricCache';
 
@@ -119,6 +119,51 @@ export class LyricService {
     } catch (err) {
       console.warn('[LyricService] 评论获取失败:', errMsg(err));
       return null;
+    }
+  }
+
+  async fetchSongDetail(track: Track): Promise<SongDetail | null> {
+    try {
+      const adapter = this.adapters[track.platform];
+      let detail = adapter.fetchSongDetail ? await adapter.fetchSongDetail(track.sourceId) : null;
+      if (detail && !detail.credits?.length) {
+        const lyric = await this.fetchLyric(track);
+        if (lyric?.lrc) detail = { ...detail, credits: creditsFromLrc(lyric.lrc) };
+      }
+      return detail;
+    } catch (err) {
+      console.warn('[LyricService] 歌曲详情失败:', errMsg(err));
+      return null;
+    }
+  }
+
+  async fetchArtistInfo(platform: Platform, artistId: string): Promise<ArtistInfo | null> {
+    try {
+      const adapter = this.adapters[platform];
+      return adapter.fetchArtistInfo ? await adapter.fetchArtistInfo(artistId) : null;
+    } catch (err) {
+      console.warn('[LyricService] 歌手信息失败:', errMsg(err));
+      return null;
+    }
+  }
+
+  async fetchArtistSongs(platform: Platform, artistId: string): Promise<Track[]> {
+    try {
+      const adapter = this.adapters[platform];
+      return adapter.fetchArtistSongs ? await adapter.fetchArtistSongs(artistId) : [];
+    } catch (err) {
+      console.warn('[LyricService] 歌手歌曲失败:', errMsg(err));
+      return [];
+    }
+  }
+
+  async fetchArtistAlbums(platform: Platform, artistId: string): Promise<AlbumSummary[]> {
+    try {
+      const adapter = this.adapters[platform];
+      return adapter.fetchArtistAlbums ? await adapter.fetchArtistAlbums(artistId) : [];
+    } catch (err) {
+      console.warn('[LyricService] 歌手专辑失败:', errMsg(err));
+      return [];
     }
   }
 }

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-08-16 — 歌曲详情/歌手主页/评论链路 + 底部条重设计 + 壁纸子窗口 + 面板悬浮化
+
+**改动**
+
+- 后端：网易云 + QQ 打通 song detail / artist info / artist songs / artist albums（QQ 使用 musicu + comm：pf_song_detail_yqq、SingerInfoInter/GetSingerDetail、song_list_server/GetSingerSongList、AlbumListServer/GetAlbumList）；LRC 制作团队解析支持中文与英文（Lyrics by 等）；IPC：song-detail / artist-info / artist-songs / artist-albums。
+- 前端弹层（居中、无叉叉、点外部关闭）：底部条评论按钮 → 评论页（热门/最新）；歌曲名 → 歌曲详情（专辑/发行/时长/制作团队/歌手 chip）；歌手名 → 歌手主页（头像/简介/歌曲/专辑，多歌手按名字匹配进入）。
+- 底部条重设计：顶部通栏独立进度条；播放模式用图标（循环/循环1/交叉）并全局 toast 提示；音量滚轮调节；删除收藏爱心；音质/翻译/音量改为悬停向上展开面板；默认音质取最高可用并持久化。
+- Wallpaper：改为原生子窗口（带系统边框，尺寸随主窗口比例），独立 view=wallpaper 页面；预览视频 IntersectionObserver 按需播放（降低卡顿）；卡片 hover 改为上浮。
+- 面板：歌单导入/设置悬浮化（左右等距、窗口比例、低透明玻璃分层）；歌单展开与列表同级滚动、头部吸顶；右键菜单不触发面板/卡片收回；搜索栏去背景层 + 聚焦不收回；全局按钮高光柔和化。
+
+**验证**
+
+- QQ/网易云详情与歌手链路实机测试通过（Baby 详情+Justin Bieber 主页 30 歌/30 专辑）；pnpm build / qa:backend / pnpm qa / desktop-check 全绿；已提交并推送 GitHub。
+
 ## 2026-08-15 — 壁纸窗口化/视频预览、WE 启动、逐字模块修复、赋色全局化、会话记忆、歌单展开、全局交互
 
 **改动**

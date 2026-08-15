@@ -381,13 +381,12 @@ async function main() {
   log('随机模式 12 次切歌不重复', `${shuffle.unique}/12`);
   const shuffleOk = modeOk && shuffle.mode === 'random' && shuffle.unique === 12;
 
-  // 10a+++. 音量滑条悬浮展开
-  const volBefore = await page.locator('.vol-slider').evaluate((el) => getComputedStyle(el).width);
-  await page.locator('.vol-group').hover();
-  await page.waitForTimeout(450);
-  const volAfter = await page.locator('.vol-slider').evaluate((el) => getComputedStyle(el).width);
-  log('音量滑条悬浮展开', `${volBefore} -> ${volAfter}`);
-  const volOk = parseFloat(volBefore) === 0 && parseFloat(volAfter) > 0;
+  // 10a+++. 音量面板悬停向上展开
+  await page.locator('.bar-tools .up-panel').last().hover();
+  await page.waitForSelector('.up-pop .vol-slider', { state: 'visible', timeout: 4000 });
+  const volAfter = await page.locator('.up-pop .vol-slider').count();
+  log('音量面板展开', `0 -> ${volAfter}`);
+  const volOk = volAfter > 0;
 
   // 10b. 点击卡片播放
   const cardCenter = await page.evaluate(() => {
@@ -574,13 +573,14 @@ async function main() {
     window.__nebula.player.playSong(track, [track]);
   });
   await page.waitForFunction(
-    () => document.querySelectorAll('.quality-menu .ctrl-btn:not(:disabled)').length === 1,
+    () => document.querySelectorAll('.bar-tools .up-panel .ctrl-btn:not(:disabled)').length >= 3,
     null,
     { timeout: 8000 },
   );
-  await page.locator('.quality-menu .ctrl-btn').click();
-  const qualityItems = await page.locator('.quality-pop .quality-item').count();
-  await page.locator('.quality-pop .quality-item', { hasText: '无损' }).click();
+  await page.locator('.bar-tools .up-panel').first().hover();
+  await page.waitForSelector('.up-pop .quality-item', { state: 'visible', timeout: 4000 });
+  const qualityItems = await page.locator('.up-pop .quality-item').count();
+  await page.locator('.up-pop .quality-item', { hasText: '无损' }).click();
   await page.waitForTimeout(300);
   const qualityState = await page.evaluate(() => {
     const s = window.__nebula.player.getState();
@@ -639,7 +639,7 @@ async function main() {
     idAfterNext === idBefore ||
     skippedTo !== 1 ||
     failedCount < 1 ||
-    qualityItems !== 3 ||
+    qualityItems < 3 ||
     !qualityState.quality ||
     !qualityState.switched ||
     !edgeHideOk ||
@@ -666,7 +666,7 @@ async function main() {
     nav: idAfterNext === idBefore,
     skip: skippedTo !== 1,
     failedCard: failedCount < 1,
-    qualityMenu: qualityItems !== 3 || !qualityState.quality || !qualityState.switched,
+    qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
     edgeHide: !edgeHideOk,
     shuffle: !shuffleOk,
     volHover: !volOk,

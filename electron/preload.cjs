@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   fallbackSong: (track) => ipcRenderer.invoke('nebula:fallback-song', { track }),
   fetchLyric: (track) => ipcRenderer.invoke('nebula:lyric', { track }),
   fetchComments: (track) => ipcRenderer.invoke('nebula:comments', { track }),
+  songDetail: (track) => ipcRenderer.invoke('nebula:song-detail', { track }),
+  artistInfo: (platform, artistId) => ipcRenderer.invoke('nebula:artist-info', { platform, artistId }),
+  artistSongs: (platform, artistId) => ipcRenderer.invoke('nebula:artist-songs', { platform, artistId }),
+  artistAlbums: (platform, artistId) => ipcRenderer.invoke('nebula:artist-albums', { platform, artistId }),
   loginQr: () => ipcRenderer.invoke('nebula:login:qr'),
   loginPoll: (unikey) => ipcRenderer.invoke('nebula:login:poll', { unikey }),
   loginPlatforms: () => ipcRenderer.invoke('nebula:login:platforms'),
@@ -24,6 +28,13 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   wallpaperList: () => ipcRenderer.invoke('nebula:wallpaper:list'),
   wallpaperInfo: () => ipcRenderer.invoke('nebula:wallpaper:info'),
   wallpaperSet: (id) => ipcRenderer.invoke('nebula:wallpaper:set', { id }),
+  wallpaperOpen: () => ipcRenderer.invoke('nebula:wallpaper:open'),
+  wallpaperApplied: (data) => ipcRenderer.send('nebula:wallpaper:applied', data),
+  onWallpaperApplied: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('nebula:wallpaper:applied', listener);
+    return () => ipcRenderer.removeListener('nebula:wallpaper:applied', listener);
+  },
   setCookie: (platform, cookie, token, nickname) =>
     ipcRenderer.invoke('nebula:cookie:set', { platform, cookie, token, nickname }),
   getCookie: (platform) => ipcRenderer.invoke('nebula:cookie:get', { platform }),

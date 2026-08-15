@@ -10,6 +10,7 @@ import { TopBar } from './components/TopBar';
 import { AccountsDrawer, type DrawerTab } from './components/AccountsDrawer';
 import { PlaylistSidebar } from './components/PlaylistSidebar';
 import { WallpaperPicker } from './components/WallpaperPicker';
+import { InfoModals } from './components/InfoModals';
 import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
@@ -106,6 +107,9 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
 type EdgeKey = 'top' | 'right' | 'left';
 
 export default function App() {
+  const isWallpaperView =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('view') === 'wallpaper';
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [visibleIds, setVisibleIds] = useState<number[]>([]);
   const [songs, setSongs] = useState<Track[]>(() => generateTracks(mulberry32(SEED), CARD_COUNT));
@@ -182,6 +186,16 @@ export default function App() {
     cover: string;
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null);
+  const contextMenuRef = useRef(contextMenu);
+  contextMenuRef.current = contextMenu;
+  const [infoModal, setInfoModal] = useState<{
+    kind: 'comments' | 'song' | 'artist';
+    track?: Track;
+    platform?: string;
+    artistId?: string;
+    artistName?: string;
+  } | null>(null);
+  const [modeToast, setModeToast] = useState('');
 
   // ---------- 边缘感应面板 ----------
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
@@ -255,6 +269,8 @@ export default function App() {
   }, []);
 
   const handleHoverChange = useCallback((id: number, hovered: boolean) => {
+    // 右键菜单打开时保留卡片悬浮态，避免菜单抢占指针导致卡片“收回”
+    if (!hovered && contextMenuRef.current) return;
     setHoveredId(hovered ? id : null);
   }, []);
 
@@ -440,6 +456,12 @@ export default function App() {
   }, []);
 
   const scheduleHidePanel = useCallback((k: EdgeKey) => {
+    if (contextMenuRef.current) return;
+    // 搜索框聚焦期间不收回顶部面板（输入法弹出/打字）
+    if (k === 'top') {
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest?.('.topbar')) return;
+    }
     if (edgeHoverRef.current[k] || edgeTimerRef.current[k]) return;
     edgeTimerRef.current[k] = window.setTimeout(() => {
       edgeTimerRef.current[k] = 0;
@@ -465,6 +487,7 @@ export default function App() {
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      if (contextMenuRef.current) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.edge-panel')) return;
       const x = e.clientX;
@@ -624,6 +647,18 @@ export default function App() {
     };
   }, [bgSetting, playerState.song?.cover, lyricSettings.lyricColorSource, lyricSettings.customColor]);
 
+  // 壁纸子窗口应用结果 → 主窗口设置背景
+  useEffect(() => {
+    if (!hasDesktopAPI() || isWallpaperView) return;
+    const off = window.nebulaAPI!.onWallpaperApplied((data) => {
+      if ('url' in data) {
+        setBgSetting({ type: data.type, url: data.url });
+        setWallpaperOpen(false);
+      }
+    });
+    return off;
+  }, [isWallpaperView]);
+
   // 歌词加载：随当前歌曲变化拉取
   useEffect(() => {
     const song = playerState.song;
@@ -696,7 +731,17 @@ export default function App() {
     window.nebulaAPI!
       .songQualities(toBackendTrack(song))
       .then((res) => {
-        if (!cancelled && res.ok) audioPlayer.setQualities(res.data ?? []);
+        if (cancelled) return;
+        if (res.ok && res.data?.length) {
+          audioPlayer.setQualities(res.data);
+          if (!preferredQuality()) {
+            try {
+              localStorage.setItem('music-nebula.quality', res.data[0]!.level);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
       })
       .catch(() => {
         /* 无音质列表时隐藏切换入口 */
@@ -931,6 +976,64 @@ export default function App() {
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  const openCommentsModal = useCallback(() => {
+    const song = audioPlayer.getState().song;
+    if (!song) return;
+    setInfoModal({ kind: 'comments', track: song });
+  }, []);
+
+  const openSongDetailModal = useCallback(() => {
+    const song = audioPlayer.getState().song;
+    if (!song) return;
+    setInfoModal({ kind: 'song', track: song });
+  }, []);
+
+  /** 底部条点击歌手名：先取详情拿歌手 id；多个/匹配不到时退回详情页。 */
+  const openArtistByName = useCallback((name: string) => {
+    const song = audioPlayer.getState().song;
+    if (!song || !hasDesktopAPI()) return;
+    window.nebulaAPI!
+      .songDetail(toBackendTrack(song))
+      .then((res) => {
+        if (!res.ok || !res.data) {
+          setInfoModal({ kind: 'song', track: song });
+          return;
+        }
+        const parts = name.split(/[\/、&,，]/).map((s) => s.trim()).filter(Boolean);
+        const match = res.data.artists.filter((a) =>
+          parts.some((p) => p === a.name || p.includes(a.name) || a.name.includes(p)),
+        );
+        if (match.length === 1) {
+          setInfoModal({ kind: 'artist', platform: res.data.platform, artistId: match[0]!.id, artistName: match[0]!.name });
+        } else {
+          setInfoModal({ kind: 'song', track: song });
+        }
+      })
+      .catch(() => setInfoModal({ kind: 'song', track: song }));
+  }, []);
+
+  const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
+    setInfoModal({ kind: 'artist', platform, artistId, artistName: name });
+  }, []);
+
+  const playArtistTrack = useCallback(
+    (t: DesktopTrack) => {
+      const front = toFrontendTrack(t, songsRef.current.length);
+      audioPlayer.playSong(front, [...songsRef.current, front]);
+      setNowPlayingOpen(false);
+      handleReset();
+    },
+    [handleReset],
+  );
+
+  const cycleModeWithToast = useCallback(() => {
+    audioPlayer.cycleMode();
+    const m = audioPlayer.getState().mode;
+    const label = m === 'sequential' ? '顺序播放' : m === 'repeat-one' ? '单曲循环' : '随机播放';
+    setModeToast(label);
+    window.setTimeout(() => setModeToast(''), 1800);
+  }, []);
+
   const handleToggleLike = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;
@@ -1060,6 +1163,14 @@ export default function App() {
   const currentSongId = playerState.song?.id ?? null;
   const liked = playerState.song ? likedIds.has(playerState.song.id) : false;
 
+  if (isWallpaperView) {
+    return (
+      <main className="app">
+        <WallpaperPicker standalone onClose={() => window.close()} onApply={() => {}} />
+      </main>
+    );
+  }
+
   const effectiveBgSetting: BackgroundSetting =
     bgSetting.type === 'cover'
       ? playerState.song?.cover
@@ -1152,7 +1263,10 @@ export default function App() {
         onLyricLayout={handleLyricLayout}
         onLyricColorSource={handleLyricColorSource}
         onCustomColor={handleCustomColor}
-        onOpenWallpapers={() => setWallpaperOpen(true)}
+        onOpenWallpapers={() => {
+          if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
+          else setWallpaperOpen(true);
+        }}
       />
 
       <PlaylistSidebar
@@ -1180,16 +1294,17 @@ export default function App() {
       </button>
 
       <BottomBar
-        liked={liked}
         translateOn={lyricTranslate}
         qualities={playerState.qualities}
         quality={playerState.quality || preferredQuality()}
         mode={playerState.mode}
-        onToggleLike={handleToggleLike}
         onToggleTranslate={handleToggleTranslate}
         onSelectQuality={handleQualitySelect}
-        onCycleMode={() => audioPlayer.cycleMode()}
+        onCycleMode={cycleModeWithToast}
         onOpenNowPlaying={() => setNowPlayingOpen(true)}
+        onOpenComments={openCommentsModal}
+        onOpenSongDetail={openSongDetailModal}
+        onOpenArtist={openArtistByName}
       />
 
       {nowPlayingOpen && playerState.song && (
@@ -1214,6 +1329,13 @@ export default function App() {
       {wallpaperOpen && (
         <WallpaperPicker onClose={() => setWallpaperOpen(false)} onApply={handleWallpaperApply} />
       )}
+      <InfoModals
+        modal={infoModal}
+        onClose={() => setInfoModal(null)}
+        onOpenArtist={openArtistFromChip}
+        onPlayArtistTrack={playArtistTrack}
+      />
+      {modeToast && <div className="mode-toast">{modeToast}</div>}
       {contextMenu && (
         <>
           <div className="ctx-backdrop" onPointerDown={closeContextMenu} onContextMenu={(e) => e.preventDefault()} />

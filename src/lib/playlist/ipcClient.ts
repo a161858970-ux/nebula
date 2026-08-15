@@ -83,6 +83,37 @@ export type DesktopWallpaperSetResult =
   | { url: string; type: 'video' | 'image' }
   | { unsupported: true; reason: string };
 
+export interface DesktopArtistRef {
+  id: string;
+  name: string;
+}
+
+export interface DesktopSongDetail {
+  platform: string;
+  title: string;
+  artists: DesktopArtistRef[];
+  album: { id: string; name: string; cover: string; publishDate?: string };
+  duration?: number;
+  credits?: Array<{ role: string; name: string }>;
+}
+
+export interface DesktopArtistInfo {
+  platform: string;
+  id: string;
+  name: string;
+  avatar: string;
+  description?: string;
+}
+
+export interface DesktopAlbumSummary {
+  platform: string;
+  id: string;
+  name: string;
+  cover: string;
+  year?: number;
+  songCount?: number;
+}
+
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
 export interface DesktopApi {
@@ -92,6 +123,10 @@ export interface DesktopApi {
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
   fetchLyric: (track: DesktopTrack) => IpcResult<unknown>;
   fetchComments: (track: DesktopTrack) => IpcResult<unknown>;
+  songDetail: (track: DesktopTrack) => IpcResult<DesktopSongDetail | null>;
+  artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
+  artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
+  artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
   loginQr: () => IpcResult<{ unikey: string; payload: string }>;
   loginPoll: (unikey: string) => IpcResult<{ ok: boolean; message: string }>;
   loginPlatforms: () => IpcResult<DesktopLoginPlatform[]>;
@@ -108,6 +143,9 @@ export interface DesktopApi {
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;
   wallpaperInfo: () => IpcResult<{ weInstalled: boolean; weLaunchUrl: string }>;
   wallpaperSet: (id: string) => IpcResult<DesktopWallpaperSetResult>;
+  wallpaperOpen: () => IpcResult<boolean>;
+  wallpaperApplied: (data: DesktopWallpaperSetResult) => void;
+  onWallpaperApplied: (cb: (data: DesktopWallpaperSetResult) => void) => () => void;
   setCookie: (platform: string, cookie: string, token?: string, nickname?: string) => IpcResult<boolean>;
   getCookie: (platform: string) => IpcResult<unknown>;
   clearCookie: (platform: string) => IpcResult<boolean>;

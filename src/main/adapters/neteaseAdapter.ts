@@ -1,5 +1,16 @@
 import type { HttpClient } from '../http';
-import type { CommentResult, Lyric, Playlist, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+import type {
+  AlbumSummary,
+  ArtistInfo,
+  CommentResult,
+  Lyric,
+  Playlist,
+  PlatformAdapter,
+  QualityOption,
+  SongDetail,
+  SongUrl,
+  Track,
+} from '../types';
 import type { CookieStore } from '../cookieStore';
 import { mergeLyric, normalizeJsonLrc } from '../parsers/lyricParser';
 import { mapNeteaseTrack } from './mappers';
@@ -265,6 +276,87 @@ export class NeteaseAdapter implements PlatformAdapter {
     } catch (err) {
       console.warn('[NeteaseAdapter] comments failed:', err instanceof Error ? err.message : err);
       return null;
+    }
+  }
+
+  async fetchSongDetail(songId: string): Promise<SongDetail | null> {
+    try {
+      const res = await callNcmSafe('song_detail', {
+        ids: songId,
+        cookie: this.cookies.getHeader('netease') ?? '',
+      });
+      const s = res?.body?.songs?.[0] as Record<string, any> | undefined;
+      if (!s) return null;
+      return {
+        platform: 'netease',
+        title: s.name ?? '',
+        artists: (s.ar ?? []).map((a: Record<string, any>) => ({ id: String(a.id ?? ''), name: a.name ?? '' })),
+        album: {
+          id: String(s.al?.id ?? ''),
+          name: s.al?.name ?? '',
+          cover: s.al?.picUrl ?? '',
+          publishDate: s.publishTime ? new Date(s.publishTime).toISOString().slice(0, 10) : undefined,
+        },
+        duration: s.dt ? Math.round(s.dt / 1000) : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchArtistInfo(artistId: string): Promise<ArtistInfo | null> {
+    try {
+      const cookie = this.cookies.getHeader('netease') ?? '';
+      const res = await callNcmSafe('artist_detail', { id: artistId, cookie });
+      const artist = res?.body?.data?.artist as Record<string, any> | undefined;
+      if (!artist) return null;
+      const desc = await callNcmSafe('artist_desc', { id: artistId, cookie });
+      return {
+        platform: 'netease',
+        id: String(artist.id ?? artistId),
+        name: artist.name ?? '',
+        avatar: artist.picUrl ?? artist.img1v1Url ?? '',
+        description: desc?.body?.briefDesc || undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchArtistSongs(artistId: string): Promise<Track[]> {
+    try {
+      const res = await callNcmSafe('artist_songs', {
+        id: artistId,
+        limit: 50,
+        offset: 0,
+        cookie: this.cookies.getHeader('netease') ?? '',
+      });
+      return (res?.body?.songs ?? [] as Array<Record<string, any>>)
+        .map(mapNeteaseTrack)
+        .filter((t: Track | null): t is Track => !!t);
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchArtistAlbums(artistId: string): Promise<AlbumSummary[]> {
+    try {
+      const res = await callNcmSafe('artist_album', {
+        id: artistId,
+        limit: 50,
+        offset: 0,
+        cookie: this.cookies.getHeader('netease') ?? '',
+      });
+      return (res?.body?.hotAlbums ?? []).map((a: Record<string, any>) => ({
+        platform: 'netease' as const,
+        id: String(a.id ?? ''),
+        name: a.name ?? '',
+        cover: a.picUrl ?? '',
+        year: a.publishTime ? new Date(a.publishTime).getFullYear() : undefined,
+        songCount: a.size,
+      }));
+    } catch {
+      return [];
     }
   }
 }

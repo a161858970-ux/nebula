@@ -1,6 +1,17 @@
 import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
-import type { CommentResult, Lyric, Playlist, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+import type {
+  AlbumSummary,
+  ArtistInfo,
+  CommentResult,
+  Lyric,
+  Playlist,
+  PlatformAdapter,
+  QualityOption,
+  SongDetail,
+  SongUrl,
+  Track,
+} from '../types';
 import { mergeLyric } from '../parsers/lyricParser';
 import { mapQQTrack } from './mappers';
 
@@ -43,6 +54,44 @@ function qqErrorMessage(code: number | undefined): string {
       return 'QQ 该歌曲需要会员或无版权';
     default:
       return `QQ 取链失败（code=${code ?? 'unknown'}）`;
+  }
+}
+
+/** musicu.fcg Web comm（歌单/详情/歌手等接口需要）。 */
+const QQ_COMM = {
+  ct: 24,
+  cv: 4747474,
+  platform: 'yqq.json',
+  chid: '0',
+  uin: '0',
+  g_tk: 5381,
+  g_tk_new_20200303: 5381,
+  format: 'json',
+  inCharset: 'utf-8',
+  outCharset: 'utf-8',
+  notice: 0,
+  need_new_code: 1,
+};
+
+async function musicuPost(
+  http: HttpClient,
+  module: string,
+  method: string,
+  param: Record<string, unknown>,
+): Promise<Record<string, any> | null> {
+  try {
+    const data = await http.requestJson<{ req_0?: Record<string, any> }>(
+      'https://u.y.qq.com/cgi-bin/musicu.fcg',
+      {
+        platform: 'qq',
+        method: 'POST',
+        body: { comm: QQ_COMM, req_0: { module, method, param } },
+        timeoutMs: 12000,
+      },
+    );
+    return data?.req_0 ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -255,5 +304,92 @@ export class QqAdapter implements PlatformAdapter {
       console.warn('[QqAdapter] comments failed:', err instanceof Error ? err.message : err);
       return null;
     }
+  }
+
+  async fetchSongDetail(songmid: string): Promise<SongDetail | null> {
+    const req = await musicuPost(this.http, 'music.pf_song_detail_svr', 'get_song_detail_yqq', {
+      song_mid: songmid,
+    });
+    const t = req?.data?.track_info as Record<string, any> | undefined;
+    if (!t) return null;
+    return {
+      platform: 'qq',
+      title: t.name ?? t.title ?? '',
+      artists: (t.singer ?? []).map((s: Record<string, any>) => ({
+        id: String(s.mid ?? s.id ?? ''),
+        name: s.name ?? '',
+      })),
+      album: {
+        id: String(t.album?.mid ?? ''),
+        name: t.album?.name ?? '',
+        cover: t.album?.mid
+          ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${t.album.mid}.jpg`
+          : '',
+        publishDate: t.album?.time_public || undefined,
+      },
+      duration: t.interval,
+    };
+  }
+
+  async fetchArtistInfo(artistId: string): Promise<ArtistInfo | null> {
+    const req = await musicuPost(this.http, 'music.musichallSinger.SingerInfoInter', 'GetSingerDetail', {
+      singer_mids: [artistId],
+      group_singer: 1,
+      wiki_singer: 1,
+      ex_singer: 1,
+      pic: 1,
+      photos: 1,
+    });
+    const singer = (req?.data?.singer_list as Array<Record<string, any>> | undefined)?.[0];
+    const basic = singer?.basic_info as Record<string, any> | undefined;
+    if (!basic) return null;
+    const pmid = String(basic.singer_pmid ?? '');
+    return {
+      platform: 'qq',
+      id: String(basic.singer_mid ?? artistId),
+      name: basic.name ?? '',
+      avatar: pmid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${pmid}.jpg` : '',
+      description: singer?.ex_info?.desc || undefined,
+    };
+  }
+
+  async fetchArtistSongs(artistId: string): Promise<Track[]> {
+    const req = await musicuPost(this.http, 'musichall.song_list_server', 'GetSingerSongList', {
+      singerMid: artistId,
+      order: 1,
+      number: 50,
+      begin: 0,
+    });
+    return ((req?.data?.songList as Array<Record<string, any>> | undefined) ?? [])
+      .map((item) => {
+        const s = (item.songInfo ?? item) as Record<string, any>;
+        // artist songInfo 形状 → 搜索形状（songmid/songname）
+        return mapQQTrack({
+          songmid: s.mid ?? s.songmid,
+          songname: s.name ?? s.title ?? s.songname,
+          singer: s.singer,
+          albummid: s.album?.mid ?? s.albummid,
+          albumname: s.album?.name ?? s.albumname,
+          interval: s.interval,
+        });
+      })
+      .filter((t): t is Track => !!t);
+  }
+
+  async fetchArtistAlbums(artistId: string): Promise<AlbumSummary[]> {
+    const req = await musicuPost(this.http, 'music.musichallAlbum.AlbumListServer', 'GetAlbumList', {
+      singerMid: artistId,
+      order: 1,
+      number: 50,
+      begin: 0,
+    });
+    return ((req?.data?.albumList as Array<Record<string, any>> | undefined) ?? []).map((a) => ({
+      platform: 'qq' as const,
+      id: String(a.albumMid ?? a.albumID ?? ''),
+      name: a.albumName ?? '',
+      cover: a.pmid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${a.pmid}.jpg` : '',
+      year: a.publishDate ? Number(String(a.publishDate).slice(0, 4)) || undefined : undefined,
+      songCount: a.totalNum,
+    }));
   }
 }

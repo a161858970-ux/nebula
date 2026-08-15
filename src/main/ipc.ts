@@ -84,6 +84,16 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   });
   safe('nebula:lyric', async ({ track }: { track: Track }) => deps.lyricService.fetchLyric(track));
   safe('nebula:comments', async ({ track }: { track: Track }) => deps.lyricService.fetchComments(track));
+  safe('nebula:song-detail', async ({ track }: { track: Track }) => deps.lyricService.fetchSongDetail(track));
+  safe('nebula:artist-info', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
+    deps.lyricService.fetchArtistInfo(platform, String(artistId)),
+  );
+  safe('nebula:artist-songs', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
+    deps.lyricService.fetchArtistSongs(platform, String(artistId)),
+  );
+  safe('nebula:artist-albums', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
+    deps.lyricService.fetchArtistAlbums(platform, String(artistId)),
+  );
 
   safe('nebula:wallpaper:list', async () => {
     const lib = deps.wallpaperLibrary;

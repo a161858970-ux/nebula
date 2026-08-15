@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from '../lib/playlist/ipcClient';
 import { hasDesktopAPI } from '../lib/playlist/ipcClient';
 
 interface WallpaperPickerProps {
   onClose: () => void;
   onApply: (item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => void;
+  /** 独立子窗口模式：应用后通知主窗口并自关。 */
+  standalone?: boolean;
 }
 
 function kindLabel(item: DesktopWallpaperItem): string {
@@ -15,13 +17,14 @@ function kindLabel(item: DesktopWallpaperItem): string {
 }
 
 /** 本机 Wallpaper Engine 壁纸库（Steam 创意工坊 + 本地项目）。 */
-export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
+export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPickerProps) {
   const [items, setItems] = useState<DesktopWallpaperItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [weInstalled, setWeInstalled] = useState(false);
   const [weLaunchUrl, setWeLaunchUrl] = useState('');
   const [hint, setHint] = useState('');
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!hasDesktopAPI()) {
@@ -57,6 +60,25 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
     };
   }, []);
 
+  // 性能：仅播放视野内的预览视频，降低解码压力与滚动卡顿
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const v = entry.target.querySelector('video');
+          if (!v) continue;
+          if (entry.isIntersecting) void v.play().catch(() => {});
+          else v.pause();
+        }
+      },
+      { root: grid, rootMargin: '140px' },
+    );
+    for (const card of grid.querySelectorAll<HTMLElement>('.wp-card')) io.observe(card);
+    return () => io.disconnect();
+  }, [items.length]);
+
   const apply = async (item: DesktopWallpaperItem): Promise<void> => {
     setHint('');
     if (!hasDesktopAPI()) return;
@@ -75,12 +97,17 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
       }
       return;
     }
+    if (standalone) {
+      window.nebulaAPI?.wallpaperApplied(res.data);
+      window.close();
+      return;
+    }
     onApply(item, res.data);
   };
 
   return (
     <div
-      className="wallpaper-overlay"
+      className={`wallpaper-overlay${standalone ? ' is-standalone' : ''}`}
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -96,7 +123,7 @@ export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
         {!loading && !error && items.length === 0 && (
           <div className="wallpaper-hint">未发现壁纸（检查 Steam 创意工坊 431960 或本地项目目录）</div>
         )}
-        <div className="wp-grid">
+        <div className="wp-grid" ref={gridRef}>
           {items.map((item) => (
             <button
               key={item.id}

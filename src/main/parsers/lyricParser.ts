@@ -87,3 +87,36 @@ export function normalizeJsonLrc(raw: string): string {
   }
   return out.join('\n');
 }
+
+/** 从 LRC 元数据提取制作团队（作词/作曲/编曲/制作人等）。 */
+const CREDIT_META =
+  /^\s*(作词|作曲|编曲|制作人?|制作|混音|录音|和声|监制|出品|词曲|词|曲|配唱|吉他|贝斯|鼓手|键盘|弦乐|母带|后期)\s*[:：]\s*(.+)$/;
+const CREDIT_EN =
+  /^\s*(Lyrics?|Composed|Produced|Written|Mixed|Mastered|Recorded|Arranged)\s+by\s*[:：]?\s*(.+)$/i;
+const CREDIT_EN_ROLE: Record<string, string> = {
+  lyrics: '作词',
+  composed: '作曲',
+  produced: '制作',
+  written: '作词',
+  mixed: '混音',
+  mastered: '母带',
+  recorded: '录音',
+  arranged: '编曲',
+};
+
+export function creditsFromLrc(lrc: string): Array<{ role: string; name: string }> {
+  const out: Array<{ role: string; name: string }> = [];
+  if (!lrc) return out;
+  for (const line of lrc.split(/\r?\n/)) {
+    const text = line.replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '').trim();
+    const m = CREDIT_META.exec(text);
+    if (m && m[2]) out.push({ role: m[1]!, name: m[2].trim() });
+    else {
+      const en = CREDIT_EN.exec(text);
+      if (en && en[2]) {
+        out.push({ role: CREDIT_EN_ROLE[en[1]!.toLowerCase()] ?? en[1]!, name: en[2].trim() });
+      }
+    }
+  }
+  return out;
+}

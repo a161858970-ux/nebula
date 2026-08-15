@@ -115,6 +115,10 @@ export interface PlatformAdapter {
   fetchSongUrl(songId: string, albumId?: string, quality?: string): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
   fetchComments?(songId: string): Promise<CommentResult | null>;
+  fetchSongDetail?(songId: string): Promise<SongDetail | null>;
+  fetchArtistInfo?(artistId: string): Promise<ArtistInfo | null>;
+  fetchArtistSongs?(artistId: string): Promise<Track[]>;
+  fetchArtistAlbums?(artistId: string): Promise<AlbumSummary[]>;
   /** Only fallback platforms (kugou) implement: keyword search. */
   searchSongs?(keyword: string, pageSize?: number): Promise<Track[]>;
   /** Quality options available for the current account (netease/qq). */
@@ -138,4 +142,36 @@ export interface AccountInfo {
   vipType?: number;
   isVip?: boolean;
   isSvip?: boolean;
+}
+
+export interface ArtistRef {
+  id: string;
+  name: string;
+}
+
+export interface SongDetail {
+  platform: Platform;
+  title: string;
+  artists: ArtistRef[];
+  album: { id: string; name: string; cover: string; publishDate?: string };
+  duration?: number;
+  /** 制作团队（作词/作曲/编曲/制作人等，取自 LRC 元数据）。 */
+  credits?: Array<{ role: string; name: string }>;
+}
+
+export interface ArtistInfo {
+  platform: Platform;
+  id: string;
+  name: string;
+  avatar: string;
+  description?: string;
+}
+
+export interface AlbumSummary {
+  platform: Platform;
+  id: string;
+  name: string;
+  cover: string;
+  year?: number;
+  songCount?: number;
 }

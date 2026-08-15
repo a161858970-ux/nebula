@@ -45,6 +45,8 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+/** 主窗口引用（供子窗口回传背景设置）。 */
+let mainWindow = null;
 
 /** Spotify OAuth（PKCE）：本地回调端口收 code → 换 token 存 CookieStore。 */
 function createSpotifyOAuth(cookies) {
@@ -190,6 +192,10 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   if (DEV_URL) {
@@ -423,6 +429,33 @@ app.whenReady().then(() => {
       return shell.openExternal(url);
     }
     return false;
+  });
+  // 壁纸库原生子窗口：尺寸随主窗口比例，带系统边框
+  ipcMain.handle('nebula:wallpaper:open', async () => {
+    if (!mainWindow) return { ok: false, error: '主窗口不存在' };
+    const [mw, mh] = mainWindow.getSize();
+    const win = new BrowserWindow({
+      width: Math.max(720, Math.round(mw * 0.72)),
+      height: Math.max(520, Math.round(mh * 0.68)),
+      title: 'Wallpaper Engine 壁纸库',
+      backgroundColor: '#0b0c16',
+      parent: mainWindow,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    });
+    const query = DEV_URL
+      ? `${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}view=wallpaper`
+      : path.join(__dirname, '../dist/index.html');
+    if (DEV_URL) win.loadURL(query);
+    else win.loadFile(query, { query: { view: 'wallpaper' } });
+    return { ok: true };
+  });
+  ipcMain.on('nebula:wallpaper:applied', (_event, data) => {
+    mainWindow?.webContents.send('nebula:wallpaper:applied', data);
   });
   setupRequestInterception();
   createWindow();
