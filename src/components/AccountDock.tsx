@@ -45,7 +45,6 @@ interface AccountDockProps {
 }
 
 const ROW_SPRING = { type: 'spring' as const, stiffness: 430, damping: 30 };
-const WIN_SPRING = { type: 'spring' as const, stiffness: 240, damping: 28 };
 
 const rowVariants = {
   hidden: { opacity: 0, scale: 0.5, y: 10 },
@@ -77,21 +76,32 @@ function JumpText({ text, delay = 0 }: { text: string; delay?: number }) {
 }
 
 /** 液态开关（Toggle Switch）：轨道 + 圆点，hover 轻微放大，为未来液态主题铺路。 */
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+/** 开关：silent-otter-72 复刻（勾号独立滑动 + em 比例缩放）。 */
+function Toggle({
+  checked,
+  onChange,
+  label,
+  small,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  small?: boolean;
+}) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className={`ui-toggle fx-medium${checked ? ' is-on' : ''}`}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="ui-toggle-liquid">
-        <span className="ui-toggle-fill" />
-        <span className="ui-toggle-blob" />
+    <label className={`switch${small ? ' sm' : ''}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={label}
+      />
+      <span className="slider">
+        <svg className="slider-icon" viewBox="0 0 12 12" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6.4 5.1 8.5 9 4.2" />
+        </svg>
       </span>
-    </button>
+    </label>
   );
 }
 
@@ -161,7 +171,7 @@ function LyricSettings({
         </label>
         <div className="ls-row">
           <span>歌词加粗</span>
-          <Toggle checked={!!setting.bold} onChange={onLyricBold} label="歌词加粗" />
+          <Toggle small checked={!!setting.bold} onChange={onLyricBold} label="歌词加粗" />
         </div>
       </div>
       <div className="ls-card">
@@ -240,7 +250,7 @@ function LyricSettings({
               className={setting.lyricColorSource === 'custom' ? 'active' : ''}
               onClick={() => onLyricColorSource('custom')}
             >
-              自定义
+              <span className="ls-opt">自定义</span>
             </button>
           </div>
         </div>
@@ -623,14 +633,14 @@ function InterfaceSettings({
           <span>隐藏主界面歌曲卡片</span>
           <em>沉浸式欣赏壁纸与歌词时隐藏 Z2 卡片云</em>
         </div>
-        <Toggle checked={uiHideCards} onChange={onToggleHideCards} label="隐藏主界面歌曲卡片" />
+        <Toggle small checked={uiHideCards} onChange={onToggleHideCards} label="隐藏主界面歌曲卡片" />
       </div>
       <div className="ui-row">
         <div className="ui-row-text">
           <span>隐藏空域歌词层</span>
           <em>隐藏 Z1 穿梭歌词，仅保留壁纸沉浸效果</em>
         </div>
-        <Toggle checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏空域歌词层" />
+        <Toggle small checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏空域歌词层" />
       </div>
     </div>
   );
@@ -706,7 +716,7 @@ export function AccountDock({
   onToggleHideCards,
   onToggleHideLyrics,
 }: AccountDockProps) {
-  const capW = useDockMetrics();
+  const { capW, ball } = useDockMetrics();
   const [hoverBall, setHoverBall] = useState<'login' | 'settings' | null>(null);
   const [openBall, setOpenBall] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
@@ -749,32 +759,32 @@ export function AccountDock({
         <span className="dock-win-title">账号登录</span>
         <span className="dock-win-sub">{loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录</span>
       </div>
-      <div className="dock-login-plats" style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}>
+      <div className="login-cards">
         {DOCK_PLATFORM_ORDER.map((p, i) => {
           const meta = platformMeta(p);
           const on = !!accounts[p]?.loggedIn;
           return (
-            <motion.button
+            <div
               key={p}
-              type="button"
-              className={`dock-lp-card fx-medium${activePlatform === p ? ' is-active' : ''}${on ? ' is-on' : ''}`}
-              style={{ '--brand': meta.brand } as React.CSSProperties}
-              initial={{ opacity: 0, y: 10, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 430, damping: 30, delay: 0.04 + i * 0.05 }}
+              className={`lc${activePlatform === p ? ' is-active' : ''}${on ? ' is-on' : ''}`}
+              style={{ '--brand': meta.brand, transitionDelay: `${i * 0.04}s` } as React.CSSProperties}
               onClick={() => {
                 setActivePlatform(p);
                 onSelectPlatform(p);
               }}
             >
-              <span className="dock-lp-icon">
-                <img src={meta.logo} alt="" draggable={false} />
-              </span>
-              <span className="dock-lp-name">
-                <JumpText text={meta.name} delay={0.08 + i * 0.05} />
-              </span>
-              <span className="dock-lp-state">{on ? '已登录' : '未登录'}</span>
-            </motion.button>
+              <div className="lc-inner">
+                <span className="lc-head">
+                  <img src={meta.logo} alt="" draggable={false} />
+                </span>
+                <span className="lc-body">
+                  <span className="nm">
+                    <JumpText text={meta.name} delay={0.08 + i * 0.05} />
+                  </span>
+                  <span className="st">{on ? '已登录' : '未登录'}</span>
+                </span>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -857,7 +867,7 @@ export function AccountDock({
   return (
     <aside
       className={`edge-panel edge-right dock dock-right${visible ? ' is-open' : ''}${openBall ? ' is-window-open' : ''}`}
-      style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}
+      style={{ '--dock-cap-w': `${capW}px`, '--dock-ball': `${ball}px` } as React.CSSProperties}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
     >
@@ -873,89 +883,71 @@ export function AccountDock({
               initial="hidden"
               animate={visible ? 'show' : 'hidden'}
               className={`dock-row dock-row-${row.id}${openBall === row.id ? ' is-open' : ''}`}
-              style={{ zIndex: 20 + i }}
+              style={{ zIndex: 20 + i, '--brand': '#8b93b8' } as React.CSSProperties}
               transition={ROW_SPRING}
               onPointerEnter={() => setHoverBall(row.id)}
               onPointerLeave={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoverBall(null);
               }}
             >
-              <button
-                type="button"
-                className={`dock-ball fx-medium${openBall === row.id ? ' is-open' : ''}`}
-                aria-label={row.name}
-                onClick={() => setOpenBall((v) => (v === row.id ? null : row.id))}
-              >
-                {row.id === 'login' ? (
-                  avatarUrl ? (
-                    <img className="dock-avatar" src={avatarUrl} alt="" draggable={false} />
-                  ) : (
-                    <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M4 21c1.2-3.8 4.2-5.6 8-5.6s6.8 1.8 8 5.6" />
-                    </svg>
-                  )
-                ) : (
-                  <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10" />
-                    <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10" />
-                  </svg>
-                )}
-                {row.id === 'login' && loggedCount > 0 && <span className="dock-dot" title={`${loggedCount} 个平台已登录`} />}
-              </button>
-
-              <motion.div
-                className="dock-capsule"
+              <div
                 role="button"
                 aria-label={row.name}
+                className={`dock-pill${expanded ? ' is-expanded' : ''}${openBall === row.id ? ' is-open' : ''}`}
+                style={{ width: expanded ? capW : ball } as React.CSSProperties}
                 onClick={() => setOpenBall((v) => (v === row.id ? null : row.id))}
-                animate={{ width: expanded ? capW : 0 }}
-                transition={ROW_SPRING}
               >
-                <div className="dock-capsule-inner">
-                  {expanded &&
-                    (row.id === 'login' ? (
-                      <div className="dock-cap-logins">
-                        {DOCK_PLATFORM_ORDER.map((p) => {
-                          const meta = platformMeta(p);
-                          const on = !!accounts[p]?.loggedIn;
-                          return (
-                            <span
-                              key={p}
-                              className={`dock-cap-logo${on ? ' is-on' : ''}`}
-                              style={{ '--brand': meta.brand } as React.CSSProperties}
-                              title={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
-                            >
-                              <img src={meta.logo} alt="" draggable={false} />
-                            </span>
-                          );
-                        })}
-                      </div>
+                <span className="pill-icon">
+                  {row.id === 'login' ? (
+                    avatarUrl ? (
+                      <img className="dock-avatar" src={avatarUrl} alt="" draggable={false} />
                     ) : (
-                      <div className="dock-cap-label">
-                        <JumpText text="自定义歌词 · 布局 · 背景 · 系统" />
-                      </div>
-                    ))}
-                  {row.id === 'login' && (
-                    <span className="dock-cap-login-text">
+                      <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M4 21c1.2-3.8 4.2-5.6 8-5.6s6.8 1.8 8 5.6" />
+                      </svg>
+                    )
+                  ) : (
+                    <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10" />
+                      <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10" />
+                    </svg>
+                  )}
+                  {row.id === 'login' && loggedCount > 0 && <span className="dock-dot" title={`${loggedCount} 个平台已登录`} />}
+                </span>
+                {row.id === 'login' ? (
+                  <>
+                    <span className="pill-dots">
+                      {DOCK_PLATFORM_ORDER.map((p) => {
+                        const meta = platformMeta(p);
+                        const on = !!accounts[p]?.loggedIn;
+                        return (
+                          <span
+                            key={p}
+                            className={`pill-dot${on ? ' is-on' : ''}`}
+                            style={{ '--brand': meta.brand } as React.CSSProperties}
+                            title={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
+                          >
+                            <img src={meta.logo} alt="" draggable={false} />
+                          </span>
+                        );
+                      })}
+                    </span>
+                    <span className="pill-badge">
                       <JumpText text={loggedCount ? `${loggedCount}/5 已登录` : '未登录'} />
                     </span>
-                  )}
-                </div>
-              </motion.div>
-
-              {openBall === row.id && (
-                <motion.div
-                  layout
-                  className="dock-window"
-                  initial={{ height: 0, opacity: 0, y: -4 }}
-                  animate={{ height: 'auto', opacity: 1, y: 0 }}
-                  transition={WIN_SPRING}
-                >
-                  {row.id === 'login' ? loginWindow : settingsWindow}
-                </motion.div>
-              )}
+                  </>
+                ) : (
+                  <span className="pill-cap">
+                    <JumpText text="自定义歌词 · 布局 · 背景 · 系统" />
+                  </span>
+                )}
+                <span className="pill-go">›</span>
+              </div>
+              <div className="dock-window">
+                <div className="dock-window-body">{row.id === 'login' ? loginWindow : settingsWindow}</div>
+              </div>
             </motion.div>
           );
         })}

@@ -303,7 +303,7 @@ async function main() {
   await page.mouse.move(1596, 420);
   await page.waitForTimeout(600);
   // 打开「设置」球窗口（默认系统设置页）→ 切到背景设置
-  await page.locator('.dock-row-settings .dock-ball').click();
+  await page.locator('.dock-row-settings .dock-pill').click();
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: '背景设置', exact: true }).click();
   await page.waitForTimeout(400);
@@ -333,7 +333,7 @@ async function main() {
   // 左侧歌单 Dock 由边缘感应触发；先悬浮「手动导入」球展开胶囊
   await page.mouse.move(4, 420);
   await page.waitForTimeout(600);
-  await page.locator('.dock-manual .dock-ball').hover();
+  await page.locator('.dock-manual .dock-pill').hover();
   await page.waitForTimeout(500);
   await page.locator('.import-panel .import-bar input').fill('');
   await page.locator('.import-panel .import-btn').click();

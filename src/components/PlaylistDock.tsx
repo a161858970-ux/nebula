@@ -25,7 +25,6 @@ interface PlaylistDockProps {
 }
 
 const ROW_SPRING = { type: 'spring' as const, stiffness: 430, damping: 30 };
-const WIN_SPRING = { type: 'spring' as const, stiffness: 240, damping: 28 };
 
 const rowVariants = {
   hidden: { opacity: 0, scale: 0.5, y: 10 },
@@ -77,7 +76,7 @@ export function PlaylistDock({
   onPlayPlaylist,
   onSongContextMenu,
 }: PlaylistDockProps) {
-  const capW = useDockMetrics();
+  const { capW, ball } = useDockMetrics();
   const [hovered, setHovered] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [expandedPlId, setExpandedPlId] = useState<string | null>(null);
@@ -100,7 +99,8 @@ export function PlaylistDock({
     ? [openId, ...DOCK_PLATFORM_ORDER.filter((p) => p !== openId), 'manual']
     : [...DOCK_PLATFORM_ORDER, 'manual'];
 
-  const capsuleContent = (id: string) => {
+  /** 胶囊内部内容：球头图标已由外层渲染，这里只输出文字/操作区。 */
+  const pillContent = (id: string) => {
     const meta = platformMeta(id);
     if (id === 'manual') {
       return (
@@ -112,20 +112,20 @@ export function PlaylistDock({
     const account = accounts[id];
     if (account?.loggedIn) {
       return (
-        <div className="dock-cap-label">
+        <span className="pill-cap">
           <JumpText text={`${meta.name} · 歌单 ${account.playlists.length} 个`} />
-        </div>
+        </span>
       );
     }
     return (
-      <div className="dock-cap-login">
-        <span className="dock-cap-name">
+      <>
+        <span className="pill-cap">
           <JumpText text={meta.name} />
         </span>
-        <span className="dock-cap-state">未登录</span>
+        <span className="pill-state">未登录</span>
         <button
           type="button"
-          className="fx-strong dock-cap-btn"
+          className="fx-strong pill-login"
           onClick={(e) => {
             e.stopPropagation();
             onGoLogin(id);
@@ -133,7 +133,7 @@ export function PlaylistDock({
         >
           去登录
         </button>
-      </div>
+      </>
     );
   };
 
@@ -236,7 +236,7 @@ export function PlaylistDock({
   return (
     <aside
       className={`edge-panel edge-left dock dock-left${visible ? ' is-open' : ''}${openId ? ' is-window-open' : ''}`}
-      style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}
+      style={{ '--dock-cap-w': `${capW}px`, '--dock-ball': `${ball}px` } as React.CSSProperties}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
     >
@@ -244,8 +244,8 @@ export function PlaylistDock({
         {rows.map((id, i) => {
           const meta = platformMeta(id);
           const account = accounts[id];
-          const expanded = hovered === id || openId === id;
           const isManual = id === 'manual';
+          const expanded = hovered === id || openId === id;
           return (
             <motion.div
               layout
@@ -262,35 +262,18 @@ export function PlaylistDock({
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setHovered(null);
               }}
             >
-              <button
-                type="button"
-                className={`dock-ball fx-medium${openId === id ? ' is-open' : ''}`}
-                style={isManual ? undefined : ({ '--brand': meta.brand } as React.CSSProperties)}
-                aria-label={isManual ? '手动导入歌单' : meta.name}
-                onClick={() => {
-                  if (isManual) return;
-                  if (openId === id) {
-                    setOpenId(null);
-                    setExpandedPlId(null);
-                  } else if (account?.loggedIn) {
-                    setOpenId(id);
-                    setExpandedPlId(null);
-                    setHovered(id);
-                  }
-                }}
-              >
-                {isManual ? (
-                  <span className="dock-manual-glyph">＋</span>
-                ) : (
-                  <img className="dock-logo-img" src={meta.logo} alt="" draggable={false} />
-                )}
-                {!isManual && account?.loggedIn && <span className="dock-dot" title="已登录" />}
-              </button>
-
-              <motion.div
-                className="dock-capsule"
+              <div
                 role={isManual ? undefined : 'button'}
                 aria-label={isManual ? undefined : meta.name}
+                className={`dock-pill${expanded ? ' is-expanded' : ''}${openId === id ? ' is-open' : ''}${
+                  isManual ? ' is-manual' : ''
+                }`}
+                style={
+                  {
+                    width: expanded ? capW : ball,
+                    '--brand': isManual ? undefined : meta.brand,
+                  } as React.CSSProperties
+                }
                 onClick={() => {
                   if (isManual) return;
                   if (openId === id) {
@@ -304,23 +287,21 @@ export function PlaylistDock({
                     onGoLogin(id);
                   }
                 }}
-                animate={{ width: expanded ? capW : 0 }}
-                transition={ROW_SPRING}
               >
-                <div className="dock-capsule-inner">{expanded ? capsuleContent(id) : null}</div>
-              </motion.div>
-
-              {openId === id && (
-                <motion.div
-                  layout
-                  className="dock-window"
-                  initial={{ height: 0, opacity: 0, y: -4 }}
-                  animate={{ height: 'auto', opacity: 1, y: 0 }}
-                  transition={WIN_SPRING}
-                >
-                  {windowContent(id)}
-                </motion.div>
-              )}
+                <span className="pill-icon">
+                  {isManual ? (
+                    <span className="dock-manual-glyph">＋</span>
+                  ) : (
+                    <img className="dock-logo-img" src={meta.logo} alt="" draggable={false} />
+                  )}
+                  {!isManual && account?.loggedIn && <span className="dock-dot" title="已登录" />}
+                </span>
+                {pillContent(id)}
+                <span className="pill-go">›</span>
+              </div>
+              <div className="dock-window">
+                <div className="dock-window-body">{windowContent(id)}</div>
+              </div>
             </motion.div>
           );
         })}
