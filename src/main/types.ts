@@ -121,6 +121,8 @@ export interface PlatformAdapter {
   fetchArtistAlbums?(artistId: string): Promise<AlbumSummary[]>;
   /** Only fallback platforms (kugou) implement: keyword search. */
   searchSongs?(keyword: string, pageSize?: number): Promise<Track[]>;
+  /** 关键词搜歌手（netease/qq），返回带平台定位的命中。 */
+  searchArtists?(keyword: string, pageSize?: number): Promise<ArtistSearchHit[]>;
   /** Quality options available for the current account (netease/qq). */
   listQualities?(songId?: string): Promise<QualityOption[]>;
 }
@@ -147,6 +149,14 @@ export interface AccountInfo {
 export interface ArtistRef {
   id: string;
   name: string;
+}
+
+/** 全网歌手搜索命中：含平台定位，可直接打开歌手页。 */
+export interface ArtistSearchHit {
+  platform: Platform;
+  id: string;
+  name: string;
+  avatar?: string;
 }
 
 export interface SongDetail {

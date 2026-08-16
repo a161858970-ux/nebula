@@ -51,6 +51,8 @@ class AudioPlayer {
   private retriedSongId: number | null = null;
   private trialEndedId: number | null = null;
   private stallTimer: number | null = null;
+  /** 临时单曲（网络搜索点播）备份：播放结束后自动接回原队列。 */
+  private transientBackup: { queue: Track[]; order: number[]; pos: number } | null = null;
 
   /**
    * 音源失败重试器（由 App 注入）：
@@ -102,6 +104,7 @@ class AudioPlayer {
 
   /** 播放指定歌曲；可选传入整个队列用于上一首/下一首。 */
   playSong(track: Track, queue?: Track[]): void {
+    this.transientBackup = null;
     if (queue && queue.length) {
       this.queue = queue;
     }
@@ -128,6 +131,26 @@ class AudioPlayer {
     this.trialEndedId = null;
     this.consecutiveSkips = 0;
     this.loadAtOrder(this.pos);
+  }
+
+  /**
+   * 播放单曲（网络搜索点播等）：不替换当前播放队列、不影响 Z2 卡片；
+   * 该曲播放结束后（或用户切下一首时）自动接回原队列继续。
+   */
+  playTransient(track: Track): void {
+    if (!this.queue.length || !this.state.song) {
+      this.playSong(track, [track]);
+      return;
+    }
+    this.transientBackup = { queue: this.queue, order: [...this.order], pos: this.pos };
+    this.queue = [track];
+    this.order = [0];
+    this.pos = 0;
+    this.failStreak = 0;
+    this.consecutiveSkips = 0;
+    this.retriedSongId = null;
+    this.trialEndedId = null;
+    this.loadAtOrder(0);
   }
 
   /** 恢复上次会话：设置当前歌曲与队列，但不自动播放、不加载音源。 */
@@ -183,6 +206,13 @@ class AudioPlayer {
   }
 
   next(): void {
+    if (this.transientBackup) {
+      const b = this.transientBackup;
+      this.transientBackup = null;
+      this.queue = b.queue;
+      this.order = b.order;
+      this.pos = b.pos;
+    }
     if (!this.queue.length) return;
     if (this.queue.length === 1) {
       this.el.currentTime = 0;
@@ -436,7 +466,7 @@ class AudioPlayer {
   private onEnded = (): void => {
     this.state.playing = false;
     this.emit();
-    if (this.mode === 'repeat-one') {
+    if (this.mode === 'repeat-one' && !this.transientBackup) {
       this.el.currentTime = 0;
       const p = this.el.play();
       p?.catch(() => {

@@ -2,6 +2,7 @@ import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type {
   AlbumSummary,
+  ArtistSearchHit,
   ArtistInfo,
   CommentResult,
   Lyric,
@@ -212,6 +213,30 @@ export class QqAdapter implements PlatformAdapter {
       return (data?.data?.song?.list ?? []).map(mapQQTrack).filter((t): t is Track => !!t);
     } catch (err) {
       console.warn('[QqAdapter] search failed:', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    try {
+      const data = await this.http.requestJson<{
+        data?: { singer?: { list?: Array<Record<string, any>> } };
+      }>(
+        `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(keyword)}&t=1&p=1&n=${pageSize}&format=json&inCharset=utf-8&outCharset=utf-8&cr=1`,
+        { platform: 'qq' },
+      );
+      return (data?.data?.singer?.list ?? [])
+        .map((a) => ({
+          platform: 'qq' as const,
+          id: String(a.singer_id ?? a.singer_mid ?? ''),
+          name: String(a.singer_name ?? ''),
+          avatar: a.singer_mid
+            ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${a.singer_mid}.jpg`
+            : '',
+        }))
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn('[QqAdapter] searchArtists failed:', err instanceof Error ? err.message : err);
       return [];
     }
   }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react';
 import { matchSongs, type SearchMatch } from '../lib/search';
 import type { Track } from '../lib/catalog';
+import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
 
 interface SearchBarProps {
   songs: Track[];
@@ -11,6 +12,10 @@ interface SearchBarProps {
   onSearchAll: (matches: SearchMatch[]) => void;
   /** 输入变化（含清空）：用于实时重排聚簇。 */
   onQueryChange: (matches: SearchMatch[]) => void;
+  /** 点击网络歌曲：仅播放该曲，不影响当前队列（播完自动接回歌单）。 */
+  onPlayNetworkSong?: (track: Track) => void;
+  /** 点击网络歌手卡片：打开与底部条歌手名同款同逻辑的歌手页。 */
+  onOpenArtist?: (platform: string, artistId: string, name: string) => void;
 }
 
 /** 果冻弹簧过渡（Aceternity gooey-input 原版参数）。 */
@@ -72,7 +77,14 @@ function SearchIcon({ layoutId }: { layoutId: string }) {
 }
 
 /** 顶部搜索：Gooey 果冻展开形态；下拉点击定位；回车聚簇全览。 */
-export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchBarProps) {
+export function SearchBar({
+  songs,
+  onPick,
+  onSearchAll,
+  onQueryChange,
+  onPlayNetworkSong,
+  onOpenArtist,
+}: SearchBarProps) {
   const reactId = useId();
   const safeId = reactId.replace(/:/g, '');
   const filterId = `gooey-filter-${safeId}`;
@@ -83,9 +95,13 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [netSongs, setNetSongs] = useState<Track[]>([]);
+  const [netArtists, setNetArtists] = useState<DesktopArtistHit[]>([]);
+  const [netSearching, setNetSearching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevExpandedRef = useRef(false);
+  const netSeqRef = useRef(0);
 
   const matches = useMemo(
     () => (query.trim() ? matchSongs(query, songs) : []),
@@ -106,16 +122,39 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
     return () => document.removeEventListener('pointerdown', onDocDown);
   }, []);
 
-  // 展开后自动聚焦；收起时清空查询并复位布局
+  // 展开后自动聚焦；收起时保留上次输入（仅手动清空）
   useEffect(() => {
     if (isExpanded) {
       inputRef.current?.focus();
     } else if (prevExpandedRef.current) {
-      setQuery('');
       setOpen(false);
     }
     prevExpandedRef.current = isExpanded;
   }, [isExpanded]);
+
+  // 全网搜索（防抖）：歌曲 + 歌手，网络结果展示在本歌单之后、歌手在前
+  useEffect(() => {
+    const q = query.trim();
+    const seq = ++netSeqRef.current;
+    if (!q || !window.nebulaAPI?.searchSongs || !window.nebulaAPI?.searchArtists) {
+      setNetSongs([]);
+      setNetArtists([]);
+      setNetSearching(false);
+      return;
+    }
+    setNetSearching(true);
+    const timer = window.setTimeout(() => {
+      const songsP = window.nebulaAPI!.searchSongs(q, 6).catch(() => ({ ok: false as const, error: '' }));
+      const artistsP = window.nebulaAPI!.searchArtists(q, 4).catch(() => ({ ok: false as const, error: '' }));
+      void Promise.all([songsP, artistsP]).then(([sr, ar]) => {
+        if (netSeqRef.current !== seq) return;
+        setNetSongs(sr.ok ? sr.data.map((t, i) => toFrontendTrack(t, 1_000_000 + i)) : []);
+        setNetArtists(ar.ok ? ar.data : []);
+        setNetSearching(false);
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const handleExpand = useCallback(() => setIsExpanded(true), []);
 
@@ -160,12 +199,13 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setOpen(false);
-        setQuery('');
         setIsExpanded(false);
       }
     },
     [matches.length, submit],
   );
+
+  const hasNet = netArtists.length > 0 || netSongs.length > 0;
 
   return (
     <div ref={wrapRef} className="gooey-search">
@@ -239,13 +279,20 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
 
       {open && query.trim() && (
         <div className="search-drop">
-          {matches.length === 0 ? (
+          {matches.length === 0 && !hasNet && !netSearching ? (
             <div className="search-empty">未找到匹配的歌曲或歌手</div>
           ) : (
             <>
               <div className="search-drop-count">
                 共 {matches.length} 首匹配{matchTotalArtist(matches) > 0 ? ` · ${matchTotalArtist(matches)} 位歌手` : ''}
                 {matches.length > 1 && ' — 回车聚簇查看'}
+                {netSearching && <em className="search-net-searching"> · 全网搜索中…</em>}
+                {hasNet && (
+                  <em className="search-net-count">
+                    {' '}
+                    · 全网 {netSongs.length} 首{netArtists.length > 0 ? ` · ${netArtists.length} 位歌手` : ''}
+                  </em>
+                )}
               </div>
               <ul className="search-results">
                 {matches.slice(0, 10).map((m, i) => (
@@ -271,6 +318,65 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
                     </button>
                   </li>
                 ))}
+                {netArtists.length > 0 && (
+                  <li className="search-divider">
+                    <span>全网歌手</span>
+                  </li>
+                )}
+                {netArtists.map((a) => (
+                  <li key={`artist-${a.platform}-${a.id}`}>
+                    <button
+                      type="button"
+                      className="search-item search-net-item"
+                      onClick={() => onOpenArtist?.(a.platform, a.id, a.name)}
+                    >
+                      <span className="search-thumb">
+                        {a.avatar ? <img src={a.avatar} alt="" loading="lazy" /> : null}
+                      </span>
+                      <span className="search-info">
+                        <span className="search-title">{a.name}</span>
+                        <span className="search-artist">
+                          {platformLabel(a.platform)}
+                          <em className="search-kind is-artist">歌手</em>
+                        </span>
+                      </span>
+                      <span className="search-go" aria-hidden="true">
+                        →
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {netSongs.length > 0 && (
+                  <li className="search-divider">
+                    <span>全网歌曲</span>
+                  </li>
+                )}
+                {netSongs.map((t) => (
+                  <li key={`net-${t.source}-${t.sourceId}`}>
+                    <button
+                      type="button"
+                      className="search-item search-net-item"
+                      onClick={() => onPlayNetworkSong?.(t)}
+                    >
+                      <span
+                        className="search-thumb"
+                        style={{ background: `hsl(${t.hue1} 70% 46%)` }}
+                      >
+                        {t.cover ? <img src={t.cover} alt="" loading="lazy" /> : null}
+                      </span>
+                      <span className="search-info">
+                        <span className="search-title">{t.title}</span>
+                        <span className="search-artist">
+                          {t.artist}
+                          <em className="search-kind is-song">点播</em>
+                        </span>
+                      </span>
+                      <span className="search-go" aria-hidden="true">
+                        ▶
+                      </span>
+                    </button>
+                  </li>
+                ))}
               </ul>
             </>
           )}
@@ -282,4 +388,17 @@ export function SearchBar({ songs, onPick, onSearchAll, onQueryChange }: SearchB
 
 function matchTotalArtist(matches: SearchMatch[]): number {
   return new Set(matches.filter((m) => m.kind === 'artist').map((m) => m.artist)).size;
+}
+
+function platformLabel(platform: string): string {
+  switch (platform) {
+    case 'netease':
+      return '网易云音乐';
+    case 'qq':
+      return 'QQ 音乐';
+    case 'kugou':
+      return '酷狗音乐';
+    default:
+      return platform;
+  }
 }

@@ -1,6 +1,7 @@
 import type { HttpClient } from '../http';
 import type {
   AlbumSummary,
+  ArtistSearchHit,
   ArtistInfo,
   CommentResult,
   Lyric,
@@ -251,6 +252,28 @@ export class NeteaseAdapter implements PlatformAdapter {
       return (data?.result?.songs ?? []).map(mapNeteaseTrack).filter((t): t is Track => !!t);
     } catch (err) {
       console.warn('[NeteaseAdapter] search failed:', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    try {
+      const data = await this.http.requestJson<{
+        result?: { artists?: Array<Record<string, any>> };
+      }>(
+        `https://music.163.com/api/search/get/web?s=${encodeURIComponent(keyword)}&type=100&offset=0&limit=${pageSize}`,
+        { platform: 'netease' },
+      );
+      return (data?.result?.artists ?? [])
+        .map((a) => ({
+          platform: 'netease' as const,
+          id: String(a.id),
+          name: String(a.name ?? ''),
+          avatar: a.img1v1Url || a.picUrl || '',
+        }))
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn('[NeteaseAdapter] searchArtists failed:', err instanceof Error ? err.message : err);
       return [];
     }
   }

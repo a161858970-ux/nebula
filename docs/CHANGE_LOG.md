@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-08-17 — 顶部搜索全网搜索/点播 + 歌手卡片 + 查询保留
+
+**改动**
+
+- 后端：网易云/QQ 新增 `searchArtists`（网易云 type=100、QQ t=1）；LyricService 新增 `searchSongs`（网易云+QQ+酷狗并发、去重裁剪）与 `searchArtists`；IPC `nebula:search-songs` / `nebula:search-artists`；preload 暴露；ipcClient 补类型。
+- 前端 SearchBar：输入防抖 350ms 发起全网搜索；结果排序 = 本歌单匹配优先 → 全网歌手卡（与歌曲卡同款，点击打开与底部条歌手名同款同逻辑的歌手页）→ 全网歌曲（点击点播）；网络结果带分隔线与计数。
+- 点播语义：新增 AudioPlayer `playTransient`——仅播放该曲、不替换当前队列、不影响 Z2 卡片；该曲播放结束（或用户切下一首）时自动接回原歌单队列继续；单曲循环模式下临时曲不循环。
+- 查询保留：收起/重开搜索框不再清空输入，仅点 × 或手动清除；Esc 只关闭不清理。
+
+**验证**
+
+- 无头 Chrome：下拉排序（本歌单→歌手→网络歌曲）正确、歌手卡打开歌手主页、点播后 next 接回歌单（id 1）、Esc 后重展开输入保留、× 清空生效；pnpm build / qa / qa:backend / build:desktop 全绿、零控制台错误。
+
 ## 2026-08-16 — 修复：回顶按钮被透明胶囊拦截 / Z1 歌词左出句尾早消与出场角度
 
 **改动**

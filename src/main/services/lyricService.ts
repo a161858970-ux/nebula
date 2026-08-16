@@ -1,5 +1,14 @@
 import type { AdapterMap } from '../adapters/index';
-import type { AlbumSummary, ArtistInfo, CommentResult, Lyric, Platform, SongDetail, Track } from '../types';
+import type {
+  AlbumSummary,
+  ArtistInfo,
+  ArtistSearchHit,
+  CommentResult,
+  Lyric,
+  Platform,
+  SongDetail,
+  Track,
+} from '../types';
 import { creditsFromLrc, mergeLyric } from '../parsers/lyricParser';
 import { matchScore } from './songResolver';
 import { LyricCache } from './lyricCache';
@@ -165,5 +174,56 @@ export class LyricService {
       console.warn('[LyricService] 歌手专辑失败:', errMsg(err));
       return [];
     }
+  }
+
+  /** 全网搜歌：网易云 + QQ（酷狗兜底），按页容量裁剪、去重。 */
+  async searchSongs(keyword: string, pageSize = 8): Promise<Track[]> {
+    const per = Math.max(2, Math.ceil(pageSize / 2));
+    const out: Track[] = [];
+    const seen = new Set<string>();
+    const push = (t: Track) => {
+      const key = `${t.platform}:${t.sourceId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(t);
+    };
+    const sources = [this.adapters.netease, this.adapters.qq, this.adapters.kugou];
+    await Promise.all(
+      sources.map(async (adapter) => {
+        if (!adapter.searchSongs) return;
+        try {
+          const list = await adapter.searchSongs(keyword, per);
+          list.forEach(push);
+        } catch (err) {
+          console.warn('[LyricService] searchSongs', adapter.platform, errMsg(err));
+        }
+      }),
+    );
+    return out.slice(0, pageSize);
+  }
+
+  /** 全网搜歌手：网易云 + QQ。 */
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    const per = Math.max(2, Math.ceil(pageSize / 2));
+    const out: ArtistSearchHit[] = [];
+    const seen = new Set<string>();
+    const sources = [this.adapters.netease, this.adapters.qq];
+    await Promise.all(
+      sources.map(async (adapter) => {
+        if (!adapter.searchArtists) return;
+        try {
+          const list = await adapter.searchArtists(keyword, per);
+          for (const hit of list) {
+            const key = `${hit.platform}:${hit.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(hit);
+          }
+        } catch (err) {
+          console.warn('[LyricService] searchArtists', adapter.platform, errMsg(err));
+        }
+      }),
+    );
+    return out.slice(0, pageSize);
   }
 }

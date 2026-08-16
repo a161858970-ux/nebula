@@ -94,6 +94,12 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:artist-albums', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistAlbums(platform, String(artistId)),
   );
+  safe('nebula:search-songs', async ({ keyword, pageSize }: { keyword: string; pageSize?: number }) =>
+    deps.lyricService.searchSongs(String(keyword), Number(pageSize) || 8),
+  );
+  safe('nebula:search-artists', async ({ keyword, pageSize }: { keyword: string; pageSize?: number }) =>
+    deps.lyricService.searchArtists(String(keyword), Number(pageSize) || 5),
+  );
 
   safe('nebula:wallpaper:list', async () => {
     const lib = deps.wallpaperLibrary;

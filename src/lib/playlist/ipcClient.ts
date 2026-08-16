@@ -114,6 +114,14 @@ export interface DesktopAlbumSummary {
   songCount?: number;
 }
 
+/** 全网歌手搜索命中（含平台定位，可直接打开歌手页）。 */
+export interface DesktopArtistHit {
+  platform: string;
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
 export interface DesktopApi {
@@ -127,6 +135,8 @@ export interface DesktopApi {
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
   artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
+  searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopTrack[]>;
+  searchArtists: (keyword: string, pageSize?: number) => IpcResult<DesktopArtistHit[]>;
   loginQr: () => IpcResult<{ unikey: string; payload: string }>;
   loginPoll: (unikey: string) => IpcResult<{ ok: boolean; message: string }>;
   loginPlatforms: () => IpcResult<DesktopLoginPlatform[]>;

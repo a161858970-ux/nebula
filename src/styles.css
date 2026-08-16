@@ -5648,6 +5648,32 @@ button:hover:not(:disabled),
     margin: 0;
   }
 
+  /* ---------- 全网搜索：分隔线 / 网络结果条目 ---------- */
+  .search-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 4px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .search-divider::before,
+  .search-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .search-net-searching,
+  .search-net-count {
+    font-style: normal;
+    color: rgba(255, 255, 255, 0.55);
+  }
+  .search-net-item .search-go {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
   /* 开窗后胶囊透明本体不拦截窗口内容点击（仅球头图标与箭头可点以关闭） */
   .row.open .pill {
     pointer-events: none;

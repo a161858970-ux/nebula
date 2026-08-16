@@ -438,6 +438,11 @@ export default function App() {
     setSearchMatches(matches);
   }, []);
 
+  /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
+  const handlePlayNetworkSong = useCallback((track: Track) => {
+    audioPlayer.playTransient(track);
+  }, []);
+
   // 播放器失败事件 → 卡片置灰
   useEffect(
     () =>
@@ -1276,6 +1281,8 @@ export default function App() {
             onPick={handleSearchPick}
             onSearchAll={handleSearchAll}
             onQueryChange={handleSearchQueryChange}
+            onPlayNetworkSong={handlePlayNetworkSong}
+            onOpenArtist={openArtistFromChip}
           />
         }
         onEnter={() => enterPanel('top')}
