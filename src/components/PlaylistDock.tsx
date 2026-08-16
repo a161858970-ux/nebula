@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
-import { ImportBar, type ImportStatus } from './ImportBar';
+import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
 interface PlaylistDockProps {
@@ -29,6 +29,47 @@ const UNAVAILABLE_TEXT: Record<string, string> = {
   spotify: '未登录 Spotify · 需配置 SPOTIFY_CLIENT_ID',
 };
 
+/** 手动导入输入框：tidy-pig-67 复刻（回车导入，无效链接小字提醒）。 */
+function ManualImport({
+  status,
+  onImport,
+}: {
+  status: ImportStatus;
+  onImport: (url: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  return (
+    <div className="manual-import">
+      <div className="group">
+        <svg
+          className="search-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          className="input"
+          placeholder="歌单链接"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            // 回车导入；留空=演示歌单（与既有行为一致）
+            if (e.key === 'Enter') onImport(value.trim());
+          }}
+          spellCheck={false}
+        />
+      </div>
+      {status === 'error' && <div className="manual-error">歌单链接无效</div>}
+    </div>
+  );
+}
+
 /**
  * 左侧歌单导入 Dock —— 原型 dock-prototype-v3.html 的逐行移植。
  * 视觉真源：prototype/dock-prototype-v3.html（用户已验证定稿，勿改结构/类名）。
@@ -37,7 +78,6 @@ export function PlaylistDock({
   visible,
   accounts,
   importStatus,
-  importMessage,
   songs,
   currentPlaylist,
   onEnter,
@@ -105,11 +145,7 @@ export function PlaylistDock({
   const windowContent = (id: string) => {
     const meta = platformMeta(id);
     if (id === 'manual') {
-      return (
-        <div className="dock-manual-panel login-detail">
-          <ImportBar status={importStatus} message={importMessage} onImport={onImportUrl} />
-        </div>
-      );
+      return <ManualImport status={importStatus} onImport={onImportUrl} />;
     }
     const account = accounts[id];
     if (!account?.loggedIn) {
@@ -233,7 +269,6 @@ export function PlaylistDock({
             <button
               type="button"
               className="pill"
-              style={isManual ? { borderStyle: 'dashed' } : undefined}
               onClick={() => handlePillClick(id)}
             >
               <span className="icon" style={isManual ? { fontSize: 14 } : undefined}>

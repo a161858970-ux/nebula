@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
@@ -68,6 +68,39 @@ function Toggle({
         </svg>
       </span>
     </label>
+  );
+}
+
+/** 单选组：slimy-chipmunk-97 复刻（双栏玻璃滑轨，双银色）。 */
+function GlassRadioGroup({
+  name,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  options: Array<{ value: string; label: React.ReactNode; disabled?: boolean }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const safe = name.replace(/[^a-z0-9]/gi, '');
+  return (
+    <div className="glass-radio-group">
+      {options.map((o) => (
+        <Fragment key={o.value}>
+          <input
+            type="radio"
+            name={safe}
+            id={`${safe}-${o.value}`}
+            checked={value === o.value}
+            disabled={o.disabled}
+            onChange={() => onChange(o.value)}
+          />
+          <label htmlFor={`${safe}-${o.value}`}>{o.label}</label>
+        </Fragment>
+      ))}
+      <div className="glass-glider" />
+    </div>
   );
 }
 
@@ -418,12 +451,6 @@ export function AccountDock({
   ) : null;
 
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
-  const seg = (active: boolean, label: React.ReactNode, onClick: () => void) => (
-    <span className={active ? 'active' : ''} onClick={onClick}>
-      {label}
-    </span>
-  );
-
   const loginWindow = (
     <>
       <div className="win-title">
@@ -469,10 +496,18 @@ export function AccountDock({
         <span>设置</span>
       </div>
       <div className="set-tabs">
-        {seg(settingsPage === 'lyrics', '歌词设置', () => setSettingsPage('lyrics'))}
-        {seg(settingsPage === 'ui', '界面设置', () => setSettingsPage('ui'))}
-        {seg(settingsPage === 'bg', '背景设置', () => setSettingsPage('bg'))}
-        {seg(settingsPage === 'system', '系统设置', () => setSettingsPage('system'))}
+        <span className={settingsPage === 'lyrics' ? 'active' : ''} onClick={() => setSettingsPage('lyrics')}>
+          歌词设置
+        </span>
+        <span className={settingsPage === 'ui' ? 'active' : ''} onClick={() => setSettingsPage('ui')}>
+          界面设置
+        </span>
+        <span className={settingsPage === 'bg' ? 'active' : ''} onClick={() => setSettingsPage('bg')}>
+          背景设置
+        </span>
+        <span className={settingsPage === 'system' ? 'active' : ''} onClick={() => setSettingsPage('system')}>
+          系统设置
+        </span>
       </div>
 
       <div className={`set-page${settingsPage === 'lyrics' ? ' active' : ''}`}>
@@ -501,10 +536,15 @@ export function AccountDock({
           <h4>高亮与动效</h4>
           <div className="ls-row">
             <span>高亮风格</span>
-            <span className="ls-seg">
-              {seg(lyricSettings.highlightStyle === 'sweep', '扫光填充', () => onHighlightStyle('sweep'))}
-              {seg(lyricSettings.highlightStyle === 'float', '上浮发光', () => onHighlightStyle('float'))}
-            </span>
+            <GlassRadioGroup
+              name="highlight"
+              options={[
+                { value: 'sweep', label: '扫光填充' },
+                { value: 'float', label: '上浮发光' },
+              ]}
+              value={lyricSettings.highlightStyle}
+              onChange={(v) => onHighlightStyle(v as LyricVisualSettings['highlightStyle'])}
+            />
           </div>
           <div className="ls-row">
             <span>当前句放大</span>
@@ -535,21 +575,27 @@ export function AccountDock({
           <h4>布局与层级</h4>
           <div className="ls-row">
             <span>歌词布局</span>
-            <span className="ls-seg">
-              {seg(lyricSettings.lyricLayout === 'stacked', '上下堆叠', () => onLyricLayout('stacked'))}
-              {seg(lyricSettings.lyricLayout === 'offset', '上下错落', () => onLyricLayout('offset'))}
-            </span>
+            <GlassRadioGroup
+              name="layout"
+              options={[
+                { value: 'stacked', label: '上下堆叠' },
+                { value: 'offset', label: '上下错落' },
+              ]}
+              value={lyricSettings.lyricLayout}
+              onChange={(v) => onLyricLayout(v as LyricVisualSettings['lyricLayout'])}
+            />
           </div>
           <div className="ls-row">
             <span>歌词取色</span>
-            <span className="ls-seg">
-              {seg(lyricSettings.lyricColorSource === 'cover', '封面取色', () => onLyricColorSource('cover'))}
-              {seg(
-                lyricSettings.lyricColorSource === 'custom',
-                <span className="ls-opt">自定义</span>,
-                () => onLyricColorSource('custom'),
-              )}
-            </span>
+            <GlassRadioGroup
+              name="color"
+              options={[
+                { value: 'cover', label: '封面取色' },
+                { value: 'custom', label: <span className="ls-opt">自定义</span> },
+              ]}
+              value={lyricSettings.lyricColorSource}
+              onChange={(v) => onLyricColorSource(v as LyricVisualSettings['lyricColorSource'])}
+            />
           </div>
           {lyricSettings.lyricColorSource === 'custom' && (
             <div className="ls-row">
@@ -564,10 +610,15 @@ export function AccountDock({
           )}
           <div className="ls-row">
             <span>悬浮层次</span>
-            <span className="ls-seg">
-              {seg(lyricSettings.layerMode === 'under', '卡片之下', () => onLayerMode('under'))}
-              {seg(lyricSettings.layerMode === 'over', '卡片之上', () => onLayerMode('over'))}
-            </span>
+            <GlassRadioGroup
+              name="layer"
+              options={[
+                { value: 'under', label: '卡片之下' },
+                { value: 'over', label: '卡片之上' },
+              ]}
+              value={lyricSettings.layerMode}
+              onChange={(v) => onLayerMode(v as LyricVisualSettings['layerMode'])}
+            />
           </div>
         </div>
       </div>
@@ -649,10 +700,17 @@ export function AccountDock({
             <span>界面主题</span>
             <em>材质主题切换；液态玻璃开发中</em>
           </div>
-          <span className="ls-seg">
-            <span className="active">磨砂玻璃</span>
-            <span style={{ opacity: 0.4 }}>液态玻璃</span>
-          </span>
+          <GlassRadioGroup
+            name="theme"
+            options={[
+              { value: 'frost', label: '磨砂玻璃' },
+              { value: 'liquid', label: '液态玻璃', disabled: true },
+            ]}
+            value="frost"
+            onChange={() => {
+              /* 液态开发中，仅磨砂可选 */
+            }}
+          />
         </div>
         <div className="ui-row">
           <div className="txt">

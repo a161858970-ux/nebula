@@ -338,8 +338,8 @@ async function main() {
   // 手动导入输入框位于手动球展开的窗口内（与原型一致）
   await page.locator('.dock .row[data-name="manual"] .pill').click();
   await page.waitForTimeout(700);
-  await page.locator('.dock-manual-panel .import-bar input').fill('');
-  await page.locator('.dock-manual-panel .import-btn').click();
+  await page.locator('.manual-import .input').fill('');
+  await page.locator('.manual-import .input').press('Enter');
   await page.waitForFunction(() => window.__nebula && window.__nebula.total === 16, null, {
     timeout: 15000,
   });
