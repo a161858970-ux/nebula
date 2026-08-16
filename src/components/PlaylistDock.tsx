@@ -184,7 +184,7 @@ export function PlaylistDock({
                 {current && <span className="pl-tag">已导入</span>}
               </button>
               {current && detailOpen && (
-                <div className="pl-detail" ref={listRef}>
+                <div className="pl-detail">
                   <div className="pl-head">
                     <span
                       className="pl-head-cover"
@@ -295,7 +295,10 @@ export function PlaylistDock({
               <span className="go">›</span>
             </button>
             <div className="win">
-              <div className="win-inner">{windowContent(id)}</div>
+              <div className="win-inner" ref={isOpen ? listRef : undefined}>
+                <div className="win-pad" />
+                {windowContent(id)}
+              </div>
             </div>
           </div>
         );

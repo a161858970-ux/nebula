@@ -591,7 +591,7 @@ export function AccountDock({
               name="color"
               options={[
                 { value: 'cover', label: '封面取色' },
-                { value: 'custom', label: <span className="ls-opt">自定义</span> },
+                { value: 'custom', label: '自定义' },
               ]}
               value={lyricSettings.lyricColorSource}
               onChange={(v) => onLyricColorSource(v as LyricVisualSettings['lyricColorSource'])}
@@ -775,7 +775,10 @@ export function AccountDock({
           <span className="go">›</span>
         </button>
         <div className="win">
-          <div className="win-inner">{loginWindow}</div>
+          <div className="win-inner">
+            <div className="win-pad" />
+            {loginWindow}
+          </div>
         </div>
       </div>
 
@@ -796,7 +799,10 @@ export function AccountDock({
           <span className="go">›</span>
         </button>
         <div className="win">
-          <div className="win-inner">{settingsWindow}</div>
+          <div className="win-inner">
+            <div className="win-pad" />
+            {settingsWindow}
+          </div>
         </div>
       </div>
     </div>

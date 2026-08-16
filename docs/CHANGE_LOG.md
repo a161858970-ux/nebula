@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-08-16 — 修复：歌词取色 radio 对齐 / 歌单吸顶与回顶 / 搜索折叠态文字渗出
+
+**改动**
+
+- 歌词取色 radio 整组右移：根因是「自定义」选项内容比四字选项窄，`width:fit-content` 使整组变窄、`margin-left:auto` 推右。修复：radio label 统一 `min-width: 71px`（四字宽），五组 radio 左缘全部对齐（实测 1415=1415）。
+- 歌单展开吸顶偏下：根因是滚动容器（win-inner）的 `padding-top: calc(ball+12)` 参与 sticky 偏移（实测间隙 55px）。修复：胶囊占位区改为内容首部可滚动的 `win-pad` 垫片、滚动容器 `padding-top:0`，吸顶头真正贴顶（实测 gap 1px）。
+- 回到顶部无效：原 ref 挂在非滚动容器 pl-detail 上。修复：ref 改挂真正的滚动容器 win-inner（当前打开行），点击后平滑回顶（实测 scrollTop→0）。
+- 搜索折叠态文字渗出：根因是 motion 给 input 内联 `opacity:1` 盖过 CSS 的 `opacity:0`。修复：折叠态 input 加 `visibility:hidden`（不受内联 opacity 影响），未点击时纯净搜索图标。
+
+**验证**
+
+- 无头 Chrome 冒烟：radio 五组左缘一致、吸顶 gap 1px、回顶 scrollTop=0、折叠 input visibility=hidden；pnpm build / qa / build:desktop 全绿、零控制台错误。
+
 ## 2026-08-16 — 设置单选玻璃化 + 手动导入输入框 + 右 Dock 图标原位修复
 
 **改动**
