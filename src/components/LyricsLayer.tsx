@@ -25,6 +25,8 @@ export interface LyricVisualSettings {
   lyricColorSource: 'cover' | 'custom';
   /** 自定义基色（hex）。 */
   customColor: string;
+  /** 歌词加粗开关（Z1 穿梭歌词）。 */
+  bold?: boolean;
 }
 
 interface LyricsLayerProps {
@@ -551,6 +553,7 @@ export function LyricsLayer({
         {
           '--lyric-size': `${settings.fontSize}px`,
           '--lyric-rise': `${settings.wordRise}px`,
+          '--lyric-weight': settings.bold ? 700 : 600,
         } as CSSProperties
       }
       aria-hidden="true"

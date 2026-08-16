@@ -7,8 +7,8 @@ import { SearchBar } from './components/SearchBar';
 import { LyricsLayer, type FrameBus, type LyricVisualSettings } from './components/LyricsLayer';
 import { NowPlayingPanel } from './components/NowPlayingPanel';
 import { TopBar } from './components/TopBar';
-import { AccountsDrawer, type DrawerTab } from './components/AccountsDrawer';
-import { PlaylistSidebar } from './components/PlaylistSidebar';
+import { AccountDock } from './components/AccountDock';
+import { PlaylistDock } from './components/PlaylistDock';
 import { WallpaperPicker } from './components/WallpaperPicker';
 import { InfoModals } from './components/InfoModals';
 import { PanController } from './lib/panEngine';
@@ -80,6 +80,15 @@ function preferredQuality(): string {
   }
 }
 
+/** 读取布尔型 UI 设置（localStorage 存 '1' / '0'）。 */
+function loadUiBool(key: string): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** 后端歌词结果（unknown）防御性归一化。 */
 function normalizeLyricLines(data: unknown, title?: string, artist?: string): LyricLineUI[] {
   if (!data || typeof data !== 'object') return [];
@@ -135,6 +144,7 @@ export default function App() {
     let lyricLayout: LyricVisualSettings['lyricLayout'] = 'stacked';
     let lyricColorSource: LyricVisualSettings['lyricColorSource'] = 'cover';
     let customColor = '#3aa0ff';
+    let bold = false;
     try {
       const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
       if (s) {
@@ -147,6 +157,7 @@ export default function App() {
         if (p.lyricLayout === 'stacked' || p.lyricLayout === 'offset') lyricLayout = p.lyricLayout;
         if (p.lyricColorSource === 'cover' || p.lyricColorSource === 'custom') lyricColorSource = p.lyricColorSource;
         if (typeof p.customColor === 'string' && /^#?[0-9a-f]{6}$/i.test(p.customColor)) customColor = p.customColor;
+        if (p.bold === true) bold = true;
       }
     } catch {
       /* 用默认值 */
@@ -160,9 +171,12 @@ export default function App() {
       lyricLayout,
       lyricColorSource,
       customColor,
+      bold,
     };
   });
   const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
+  const [uiHideCards, setUiHideCards] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-cards'));
+  const [uiHideLyrics, setUiHideLyrics] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-lyrics'));
   const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
     const m = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.bg-cover-mode') : null;
     if (m === 'fill' || m === 'frosted' || m === 'color' || m === 'palette' || m === 'blend' || m === 'prism') {
@@ -175,7 +189,7 @@ export default function App() {
   // ---------- 多平台账号状态（可并行登录） ----------
   const [platforms, setPlatforms] = useState<DesktopLoginPlatform[]>([]);
   const [accounts, setAccounts] = useState<Record<string, AccountState>>({});
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>('accounts');
+  const [loginNonce, setLoginNonce] = useState(0);
   const [drawerPlatform, setDrawerPlatform] = useState('netease');
   const [localBusy, setLocalBusy] = useState(false);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
@@ -1103,6 +1117,32 @@ export default function App() {
     (c: string) => persistLyricSettings({ ...lyricSettings, customColor: c }),
     [lyricSettings, persistLyricSettings],
   );
+  const handleLyricBold = useCallback(
+    (b: boolean) => persistLyricSettings({ ...lyricSettings, bold: b }),
+    [lyricSettings, persistLyricSettings],
+  );
+  const toggleHideCards = useCallback(() => {
+    setUiHideCards((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('music-nebula.ui-hide-cards', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+  const toggleHideLyrics = useCallback(() => {
+    setUiHideLyrics((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('music-nebula.ui-hide-lyrics', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
   const handleCoverMode = useCallback((m: CoverBgMode) => {
     setBgCoverMode(m);
     try {
@@ -1145,7 +1185,7 @@ export default function App() {
   const handleGoLogin = useCallback(
     (platform: string) => {
       setDrawerPlatform(platform);
-      setDrawerTab('accounts');
+      setLoginNonce((n) => n + 1);
       showPanel('right');
     },
     [showPanel],
@@ -1182,22 +1222,27 @@ export default function App() {
     <main className="app">
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
 
-      <LyricsLayer
-        lines={lyricLines}
-        currentTime={playerState.currentTime}
-        playing={playerState.playing}
-        frameBus={frameBusRef.current}
-        settings={lyricSettings}
-        songKey={
-          playerState.song
-            ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}`
-            : 'none'
-        }
-        songTitle={playerState.song?.title}
-        songArtist={playerState.song?.artist}
-      />
+      {!uiHideLyrics && (
+        <LyricsLayer
+          lines={lyricLines}
+          currentTime={playerState.currentTime}
+          playing={playerState.playing}
+          frameBus={frameBusRef.current}
+          settings={lyricSettings}
+          songKey={
+            playerState.song
+              ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}`
+              : 'none'
+          }
+          songTitle={playerState.song?.title}
+          songArtist={playerState.song?.artist}
+        />
+      )}
 
-      <div ref={stageRef} className={`stage-3d${importing ? ' is-importing' : ''}`}>
+      <div
+        ref={stageRef}
+        className={`stage-3d${importing ? ' is-importing' : ''}${uiHideCards ? ' is-cards-hidden' : ''}`}
+      >
         {visibleIds.map((id) => {
           const card = effectiveCards[id]!;
           if (!card) return null;
@@ -1238,23 +1283,24 @@ export default function App() {
         onOpenLocal={handleOpenLocal}
       />
 
-      <AccountsDrawer
+      <AccountDock
         visible={edge.right}
-        tab={drawerTab}
         selectedPlatform={drawerPlatform}
+        loginNonce={loginNonce}
         platforms={platforms}
         accounts={accounts}
         bgSetting={bgSetting}
         coverMode={bgCoverMode}
+        lyricSettings={lyricSettings}
+        uiHideCards={uiHideCards}
+        uiHideLyrics={uiHideLyrics}
         onEnter={() => enterPanel('right')}
         onLeave={() => leavePanel('right')}
-        onTabChange={setDrawerTab}
         onSelectPlatform={setDrawerPlatform}
         onRefreshAccount={refreshAccount}
         onSelectBg={handleSelectBg}
         onFile={handleBgFile}
         onCoverMode={handleCoverMode}
-        lyricSettings={lyricSettings}
         onFontSize={handleLyricFontSize}
         onHighlightStyle={handleHighlightStyle}
         onLayerMode={handleLayerMode}
@@ -1263,15 +1309,17 @@ export default function App() {
         onLyricLayout={handleLyricLayout}
         onLyricColorSource={handleLyricColorSource}
         onCustomColor={handleCustomColor}
+        onLyricBold={handleLyricBold}
+        onToggleHideCards={toggleHideCards}
+        onToggleHideLyrics={toggleHideLyrics}
         onOpenWallpapers={() => {
           if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
           else setWallpaperOpen(true);
         }}
       />
 
-      <PlaylistSidebar
+      <PlaylistDock
         visible={edge.left}
-        platforms={platforms}
         accounts={accounts}
         importStatus={importStatus}
         importMessage={importMessage}
@@ -1285,7 +1333,6 @@ export default function App() {
         currentPlaylist={currentPlaylist}
         onPlaySongFromList={playSongFromList}
         onPlayPlaylist={playPlaylistFromStart}
-        onInsertNext={insertNextSong}
         onSongContextMenu={openContextMenu}
       />
 

@@ -299,14 +299,17 @@ async function main() {
   log('重置后 pan', JSON.stringify(afterReset));
 
   // ---------- 9) 背景系统 ----------
-  // 右侧抽屉由边缘感应触发：先移到右边缘
+  // 右侧 Dock 由边缘感应触发：先移到右边缘
   await page.mouse.move(1596, 420);
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: '背景', exact: true }).click();
-  await page.waitForTimeout(300);
-  // 预设背景已移除：封面背景为默认；无歌单时回退隐藏的午夜星空
-  await page.locator('.bg-cover').click();
-  await page.waitForTimeout(300);
+  // 打开「设置」球窗口（默认系统设置页）→ 切到背景设置
+  await page.locator('.dock-row-settings .dock-ball').click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: '背景设置', exact: true }).click();
+  await page.waitForTimeout(400);
+  // 跟随当前播放歌曲封面（底部第三张方案卡）；无歌单时回退隐藏的午夜星空
+  await page.locator('.bg-scheme').nth(2).click();
+  await page.waitForTimeout(400);
   log('封面背景(无封面→午夜备用)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-midnight')));
 
   await page.waitForTimeout(200);
@@ -327,9 +330,11 @@ async function main() {
 
   // ---------- 10) 歌单导入与播放器 ----------
   // 10a. 导入演示歌单（输入留空）
-  // 左侧歌单侧栏由边缘感应触发
+  // 左侧歌单 Dock 由边缘感应触发；先悬浮「手动导入」球展开胶囊
   await page.mouse.move(4, 420);
   await page.waitForTimeout(600);
+  await page.locator('.dock-manual .dock-ball').hover();
+  await page.waitForTimeout(500);
   await page.locator('.import-panel .import-bar input').fill('');
   await page.locator('.import-panel .import-btn').click();
   await page.waitForFunction(() => window.__nebula && window.__nebula.total === 16, null, {
