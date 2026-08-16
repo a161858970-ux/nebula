@@ -3573,3 +3573,125 @@ button:hover:not(:disabled),
   flex-direction: column;
   gap: 2px;
 }
+
+/* ============================================================
+   Gooey 果冻搜索（Aceternity gooey-input 移植，液态玻璃体系）
+   ============================================================ */
+
+.gooey-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.gooey-filter-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.gooey-stage {
+  position: relative;
+  height: 40px;
+}
+
+.gooey-pill-row {
+  height: 40px;
+}
+
+/* 胶囊本体：V2 液态玻璃表面由 .glass-btn 提供，这里只做布局覆写 */
+.gooey-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 13px;
+  text-align: left;
+}
+
+.gooey-pill.is-collapsed {
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.gooey-pill input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.gooey-pill.is-collapsed input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gooey-pill input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.gooey-pill input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.gooey-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* 展开态浮在左侧的放大镜“泡泡” */
+.gooey-bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gooey-bubble-surface {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gooey-clear {
+  flex: none;
+}
+
+/* 顶部搜索栏：去掉整条背景层，仅保留搜索胶囊 / 按钮 / 徽章本身悬浮 */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
