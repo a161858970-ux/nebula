@@ -4507,3 +4507,339 @@ button:hover:not(:disabled),
   text-align: center;
   white-space: normal;
 }
+
+/* ============================================================
+   Dock 细节优化 v2：比例化 + 球→胶囊→卡片一体化
+   ============================================================ */
+
+.dock {
+  --dock-ball: clamp(34px, 4.4vh, 48px);
+  top: 18vh;
+  transition:
+    top 0.35s ease,
+    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.28s ease;
+}
+
+.edge-panel.edge-left.dock-left,
+.edge-panel.edge-right.dock-right {
+  top: 18vh;
+  transform: none;
+}
+
+.edge-panel.edge-left.dock-left:not(.is-open) {
+  transform: translateX(-24px);
+}
+
+.edge-panel.edge-right.dock-right:not(.is-open) {
+  transform: translateX(24px);
+}
+
+/* 窗口打开时整体上移，为向下展开的窗口让出空间 */
+.dock.is-window-open {
+  top: 8vh;
+}
+
+.dock-stack {
+  gap: calc(var(--dock-ball) * 0.28);
+}
+
+/* 行改为纵向：球在上，窗口紧贴胶囊下方展开 */
+.dock-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.dock-right .dock-row {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.dock-ball {
+  z-index: 3;
+  width: var(--dock-ball);
+  height: var(--dock-ball);
+}
+
+/* 胶囊：从球本身开始单向扩展，球成为胶囊起点（左端/右端） */
+.dock-capsule {
+  z-index: 2;
+  top: 0;
+  left: 0;
+  right: auto;
+  height: var(--dock-ball);
+  cursor: pointer;
+}
+
+.dock-right .dock-capsule {
+  left: auto;
+  right: 0;
+}
+
+.dock-manual .dock-capsule {
+  cursor: default;
+  height: calc(var(--dock-ball) + 12px);
+}
+
+.dock-capsule-inner {
+  left: var(--dock-ball);
+  right: auto;
+  width: calc(var(--dock-cap-w) - var(--dock-ball));
+  height: var(--dock-ball);
+  padding: 0 18px 0 10px;
+  border-radius: 0 999px 999px 0;
+}
+
+.dock-right .dock-capsule-inner {
+  left: auto;
+  right: var(--dock-ball);
+  padding: 0 10px 0 18px;
+  border-radius: 999px 0 0 999px;
+}
+
+.dock-manual .dock-capsule-inner {
+  height: calc(var(--dock-ball) + 12px);
+}
+
+/* 窗口：紧贴胶囊下方，宽度与胶囊一致，顶部直角融入胶囊 */
+.dock-window {
+  z-index: 1;
+  width: var(--dock-cap-w);
+  margin: 0;
+  border-radius: 0 0 16px 16px;
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.dock-right .dock-window {
+  margin: 0;
+}
+
+.dock-window-body {
+  max-height: clamp(150px, calc(67vh - 80px), 460px);
+}
+
+/* 歌单展开：与窗口同级滚动，修复背景断开/重叠/吸顶失效 */
+.dock-pl-detail {
+  overflow: visible;
+}
+
+.dock-pl-detail .pl-songs {
+  max-height: none;
+  overflow: visible;
+}
+
+.dock-pl-detail .pl-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+/* 登录胶囊：五平台图标等距排布，位置与窗口内垂直小胶囊一一对应 */
+.dock-cap-logins {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  height: 100%;
+  padding: 0 8px;
+}
+
+.dock-cap-logo {
+  width: calc(var(--dock-ball) * 0.62);
+  height: calc(var(--dock-ball) * 0.62);
+  justify-self: center;
+}
+
+.dock-cap-login-text {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  background: rgba(10, 12, 22, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 登录窗口：五个垂直小胶囊等宽 */
+.dock-login-plats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.dock-lp-name {
+  font-size: 10px;
+  min-height: 26px;
+  overflow: hidden;
+}
+
+/* 背景方案卡 hover：减轻放大（相对 fx-medium） */
+.bg-scheme.fx-medium:hover:not(:disabled) {
+  transform: scale(1.012);
+  box-shadow: 0 0 14px rgba(var(--glow-rgb, 120, 140, 220), 0.12);
+}
+
+/* 设置内容高度动画容器 */
+.dock-anim-h {
+  overflow: hidden;
+}
+
+/* ---------- 液态开关（light-lion 复刻：blur+contrast 液态圆点） ---------- */
+
+.ui-toggle {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.38),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.18s var(--ui-spring),
+    box-shadow 0.18s ease;
+}
+
+.ui-toggle-liquid {
+  position: absolute;
+  inset: 0;
+  filter: blur(4px) contrast(14);
+  pointer-events: none;
+}
+
+.ui-toggle-fill {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: rgba(var(--glow-rgb, 120, 140, 220), 0.78);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.5s cubic-bezier(0.75, 0, 0.75, 1.2);
+}
+
+.ui-toggle-blob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #fff 0 45%, rgba(200, 210, 255, 0.95) 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.5s cubic-bezier(0.75, 0, 0.75, 1.25);
+}
+
+.ui-toggle.is-on {
+  border-color: rgba(var(--glow-rgb, 120, 140, 220), 0.45);
+}
+
+.ui-toggle.is-on .ui-toggle-fill {
+  transform: scaleX(1);
+}
+
+.ui-toggle.is-on .ui-toggle-blob {
+  transform: translateX(18px);
+}
+
+/* ---------- 歌词设置：分组卡片 + 精致分段/滑块 ---------- */
+
+.lyric-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ls-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ls-card-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.ls-row {
+  font-size: 12px;
+}
+
+.ls-row em {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.ls-seg {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ls-seg button {
+  flex: 1;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.ls-seg button.active {
+  background: rgba(var(--glow-rgb, 120, 140, 220), 0.18);
+  color: #fff;
+  box-shadow:
+    0 0 10px rgba(var(--glow-rgb, 120, 140, 220), 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.ls-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  outline: none;
+  cursor: pointer;
+}
+
+.ls-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, #fff 0 40%, rgba(var(--glow-rgb, 120, 140, 220), 0.95));
+  box-shadow:
+    0 0 8px rgba(var(--glow-rgb, 120, 140, 220), 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.4);
+}

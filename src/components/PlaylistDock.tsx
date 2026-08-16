@@ -4,6 +4,7 @@ import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
 import { ImportBar, type ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import { useDockMetrics } from '../lib/dock';
 
 interface PlaylistDockProps {
   visible: boolean;
@@ -23,8 +24,6 @@ interface PlaylistDockProps {
   onSongContextMenu: (e: React.MouseEvent, track: Track) => void;
 }
 
-/** 胶囊展开后的固定宽度（窗口宽度与胶囊一致）。 */
-const CAPSULE_W = 300;
 const ROW_SPRING = { type: 'spring' as const, stiffness: 430, damping: 30 };
 const WIN_SPRING = { type: 'spring' as const, stiffness: 240, damping: 28 };
 
@@ -78,6 +77,7 @@ export function PlaylistDock({
   onPlayPlaylist,
   onSongContextMenu,
 }: PlaylistDockProps) {
+  const capW = useDockMetrics();
   const [hovered, setHovered] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [expandedPlId, setExpandedPlId] = useState<string | null>(null);
@@ -235,7 +235,8 @@ export function PlaylistDock({
 
   return (
     <aside
-      className={`edge-panel edge-left dock dock-left${visible ? ' is-open' : ''}`}
+      className={`edge-panel edge-left dock dock-left${visible ? ' is-open' : ''}${openId ? ' is-window-open' : ''}`}
+      style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
     >
@@ -288,7 +289,22 @@ export function PlaylistDock({
 
               <motion.div
                 className="dock-capsule"
-                animate={{ width: expanded ? CAPSULE_W : 0 }}
+                role={isManual ? undefined : 'button'}
+                aria-label={isManual ? undefined : meta.name}
+                onClick={() => {
+                  if (isManual) return;
+                  if (openId === id) {
+                    setOpenId(null);
+                    setExpandedPlId(null);
+                  } else if (account?.loggedIn) {
+                    setOpenId(id);
+                    setExpandedPlId(null);
+                    setHovered(id);
+                  } else {
+                    onGoLogin(id);
+                  }
+                }}
+                animate={{ width: expanded ? capW : 0 }}
                 transition={ROW_SPRING}
               >
                 <div className="dock-capsule-inner">{expanded ? capsuleContent(id) : null}</div>
@@ -298,8 +314,8 @@ export function PlaylistDock({
                 <motion.div
                   layout
                   className="dock-window"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
+                  initial={{ height: 0, opacity: 0, y: -4 }}
+                  animate={{ height: 'auto', opacity: 1, y: 0 }}
                   transition={WIN_SPRING}
                 >
                   {windowContent(id)}

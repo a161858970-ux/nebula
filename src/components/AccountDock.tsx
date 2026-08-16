@@ -7,6 +7,7 @@ import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from './BackgroundLayer';
 import type { LyricVisualSettings } from './LyricsLayer';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import { useDockMetrics } from '../lib/dock';
 
 export type DockSettingsPage = 'lyrics' | 'interface' | 'background' | 'system';
 
@@ -43,7 +44,6 @@ interface AccountDockProps {
   onToggleHideLyrics: () => void;
 }
 
-const CAPSULE_W = 300;
 const ROW_SPRING = { type: 'spring' as const, stiffness: 430, damping: 30 };
 const WIN_SPRING = { type: 'spring' as const, stiffness: 240, damping: 28 };
 
@@ -87,8 +87,34 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
       className={`ui-toggle fx-medium${checked ? ' is-on' : ''}`}
       onClick={() => onChange(!checked)}
     >
-      <span className="ui-toggle-knob" />
+      <span className="ui-toggle-liquid">
+        <span className="ui-toggle-fill" />
+        <span className="ui-toggle-blob" />
+      </span>
     </button>
+  );
+}
+
+/** 设置内容高度动画：切换页面时仅从卡片下部延展/收缩。 */
+function AnimatedHeight({ children }: { children: React.ReactNode }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | 'auto'>('auto');
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const target = el.offsetHeight;
+    setHeight((prev) => {
+      if (prev === 'auto' || Math.abs((prev as number) - target) < 2) return target;
+      requestAnimationFrame(() => setHeight(target));
+      return prev;
+    });
+  }, [children]);
+  return (
+    <div className="dock-anim-h">
+      <motion.div animate={{ height }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} style={{ overflow: 'hidden' }}>
+        <div ref={innerRef}>{children}</div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -119,123 +145,132 @@ function LyricSettings({
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   return (
     <div className="lyric-settings">
-      <label className="ls-row">
-        <span>字体大小</span>
-        <input
-          type="range"
-          min={14}
-          max={maxFont}
-          step={1}
-          value={setting.fontSize}
-          onChange={(e) => onFontSize(Number(e.target.value))}
-        />
-        <em>{setting.fontSize}px</em>
-      </label>
-      <div className="ls-row">
-        <span>歌词加粗</span>
-        <Toggle checked={!!setting.bold} onChange={onLyricBold} label="歌词加粗" />
-      </div>
-      <div className="ls-row">
-        <span>高亮风格</span>
-        <div className="ls-seg">
-          <button
-            className={setting.highlightStyle === 'sweep' ? 'active' : ''}
-            onClick={() => onHighlightStyle('sweep')}
-          >
-            扫光填充
-          </button>
-          <button
-            className={setting.highlightStyle === 'float' ? 'active' : ''}
-            onClick={() => onHighlightStyle('float')}
-          >
-            上浮发光
-          </button>
-        </div>
-      </div>
-      <label className="ls-row">
-        <span>当前句放大</span>
-        <input
-          type="range"
-          min={1}
-          max={1.6}
-          step={0.02}
-          value={setting.currentScale}
-          onChange={(e) => onCurrentScale(Number(e.target.value))}
-        />
-        <em>{setting.currentScale.toFixed(2)}×</em>
-      </label>
-      <label className="ls-row">
-        <span>逐字上浮</span>
-        <input
-          type="range"
-          min={0}
-          max={12}
-          step={1}
-          value={setting.wordRise}
-          onChange={(e) => onWordRise(Number(e.target.value))}
-        />
-        <em>{setting.wordRise}px</em>
-      </label>
-      <div className="ls-row">
-        <span>歌词布局</span>
-        <div className="ls-seg">
-          <button
-            className={setting.lyricLayout === 'stacked' ? 'active' : ''}
-            onClick={() => onLyricLayout('stacked')}
-          >
-            上下堆叠
-          </button>
-          <button
-            className={setting.lyricLayout === 'offset' ? 'active' : ''}
-            onClick={() => onLyricLayout('offset')}
-          >
-            上下错落
-          </button>
-        </div>
-      </div>
-      <div className="ls-row">
-        <span>歌词取色</span>
-        <div className="ls-seg">
-          <button
-            className={setting.lyricColorSource === 'cover' ? 'active' : ''}
-            onClick={() => onLyricColorSource('cover')}
-          >
-            封面取色
-          </button>
-          <button
-            className={setting.lyricColorSource === 'custom' ? 'active' : ''}
-            onClick={() => onLyricColorSource('custom')}
-          >
-            自定义
-          </button>
-        </div>
-      </div>
-      {setting.lyricColorSource === 'custom' && (
+      <div className="ls-card">
+        <h4 className="ls-card-title">基础文字</h4>
         <label className="ls-row">
-          <span>基色</span>
+          <span>字体大小</span>
           <input
-            type="color"
-            value={setting.customColor}
-            onChange={(e) => onCustomColor(e.target.value)}
-            style={{ width: 46, height: 26, border: 'none', background: 'none', cursor: 'pointer' }}
+            type="range"
+            min={14}
+            max={maxFont}
+            step={1}
+            value={setting.fontSize}
+            onChange={(e) => onFontSize(Number(e.target.value))}
           />
+          <em>{setting.fontSize}px</em>
         </label>
-      )}
-      <div className="ls-row">
-        <span>悬浮层次</span>
-        <div className="ls-seg">
-          <button
-            className={setting.layerMode === 'under' ? 'active' : ''}
-            onClick={() => onLayerMode('under')}
-          >
-            卡片之下
-          </button>
-          <button
-            className={setting.layerMode === 'over' ? 'active' : ''}
-            onClick={() => onLayerMode('over')}
-          >
-            卡片之上
-          </button>
+        <div className="ls-row">
+          <span>歌词加粗</span>
+          <Toggle checked={!!setting.bold} onChange={onLyricBold} label="歌词加粗" />
+        </div>
+      </div>
+      <div className="ls-card">
+        <h4 className="ls-card-title">高亮与动效</h4>
+        <div className="ls-row">
+          <span>高亮风格</span>
+          <div className="ls-seg">
+            <button
+              className={setting.highlightStyle === 'sweep' ? 'active' : ''}
+              onClick={() => onHighlightStyle('sweep')}
+            >
+              扫光填充
+            </button>
+            <button
+              className={setting.highlightStyle === 'float' ? 'active' : ''}
+              onClick={() => onHighlightStyle('float')}
+            >
+              上浮发光
+            </button>
+          </div>
+        </div>
+        <label className="ls-row">
+          <span>当前句放大</span>
+          <input
+            type="range"
+            min={1}
+            max={1.6}
+            step={0.02}
+            value={setting.currentScale}
+            onChange={(e) => onCurrentScale(Number(e.target.value))}
+          />
+          <em>{setting.currentScale.toFixed(2)}×</em>
+        </label>
+        <label className="ls-row">
+          <span>逐字上浮</span>
+          <input
+            type="range"
+            min={0}
+            max={12}
+            step={1}
+            value={setting.wordRise}
+            onChange={(e) => onWordRise(Number(e.target.value))}
+          />
+          <em>{setting.wordRise}px</em>
+        </label>
+      </div>
+      <div className="ls-card">
+        <h4 className="ls-card-title">布局与层级</h4>
+        <div className="ls-row">
+          <span>歌词布局</span>
+          <div className="ls-seg">
+            <button
+              className={setting.lyricLayout === 'stacked' ? 'active' : ''}
+              onClick={() => onLyricLayout('stacked')}
+            >
+              上下堆叠
+            </button>
+            <button
+              className={setting.lyricLayout === 'offset' ? 'active' : ''}
+              onClick={() => onLyricLayout('offset')}
+            >
+              上下错落
+            </button>
+          </div>
+        </div>
+        <div className="ls-row">
+          <span>歌词取色</span>
+          <div className="ls-seg">
+            <button
+              className={setting.lyricColorSource === 'cover' ? 'active' : ''}
+              onClick={() => onLyricColorSource('cover')}
+            >
+              封面取色
+            </button>
+            <button
+              className={setting.lyricColorSource === 'custom' ? 'active' : ''}
+              onClick={() => onLyricColorSource('custom')}
+            >
+              自定义
+            </button>
+          </div>
+        </div>
+        {setting.lyricColorSource === 'custom' && (
+          <label className="ls-row">
+            <span>基色</span>
+            <input
+              type="color"
+              value={setting.customColor}
+              onChange={(e) => onCustomColor(e.target.value)}
+              style={{ width: 42, height: 24, border: 'none', background: 'none', cursor: 'pointer' }}
+            />
+          </label>
+        )}
+        <div className="ls-row">
+          <span>悬浮层次</span>
+          <div className="ls-seg">
+            <button
+              className={setting.layerMode === 'under' ? 'active' : ''}
+              onClick={() => onLayerMode('under')}
+            >
+              卡片之下
+            </button>
+            <button
+              className={setting.layerMode === 'over' ? 'active' : ''}
+              onClick={() => onLayerMode('over')}
+            >
+              卡片之上
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -671,6 +706,7 @@ export function AccountDock({
   onToggleHideCards,
   onToggleHideLyrics,
 }: AccountDockProps) {
+  const capW = useDockMetrics();
   const [hoverBall, setHoverBall] = useState<'login' | 'settings' | null>(null);
   const [openBall, setOpenBall] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
@@ -713,7 +749,7 @@ export function AccountDock({
         <span className="dock-win-title">账号登录</span>
         <span className="dock-win-sub">{loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录</span>
       </div>
-      <div className="dock-login-plats">
+      <div className="dock-login-plats" style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}>
         {DOCK_PLATFORM_ORDER.map((p, i) => {
           const meta = platformMeta(p);
           const on = !!accounts[p]?.loggedIn;
@@ -780,45 +816,48 @@ export function AccountDock({
         ))}
       </div>
       <div className="dock-settings-body">
-        {settingsPage === 'lyrics' ? (
-          <LyricSettings
-            setting={lyricSettings}
-            onFontSize={onFontSize}
-            onHighlightStyle={onHighlightStyle}
-            onLayerMode={onLayerMode}
-            onCurrentScale={onCurrentScale}
-            onWordRise={onWordRise}
-            onLyricLayout={onLyricLayout}
-            onLyricColorSource={onLyricColorSource}
-            onCustomColor={onCustomColor}
-            onLyricBold={onLyricBold}
-          />
-        ) : settingsPage === 'interface' ? (
-          <InterfaceSettings
-            uiHideCards={uiHideCards}
-            uiHideLyrics={uiHideLyrics}
-            onToggleHideCards={onToggleHideCards}
-            onToggleHideLyrics={onToggleHideLyrics}
-          />
-        ) : settingsPage === 'background' ? (
-          <BackgroundSettings
-            bgSetting={bgSetting}
-            coverMode={coverMode}
-            onSelect={onSelectBg}
-            onFile={onFile}
-            onCoverMode={onCoverMode}
-            onOpenWallpapers={onOpenWallpapers}
-          />
-        ) : (
-          <SystemSettings />
-        )}
+        <AnimatedHeight>
+          {settingsPage === 'lyrics' ? (
+            <LyricSettings
+              setting={lyricSettings}
+              onFontSize={onFontSize}
+              onHighlightStyle={onHighlightStyle}
+              onLayerMode={onLayerMode}
+              onCurrentScale={onCurrentScale}
+              onWordRise={onWordRise}
+              onLyricLayout={onLyricLayout}
+              onLyricColorSource={onLyricColorSource}
+              onCustomColor={onCustomColor}
+              onLyricBold={onLyricBold}
+            />
+          ) : settingsPage === 'interface' ? (
+            <InterfaceSettings
+              uiHideCards={uiHideCards}
+              uiHideLyrics={uiHideLyrics}
+              onToggleHideCards={onToggleHideCards}
+              onToggleHideLyrics={onToggleHideLyrics}
+            />
+          ) : settingsPage === 'background' ? (
+            <BackgroundSettings
+              bgSetting={bgSetting}
+              coverMode={coverMode}
+              onSelect={onSelectBg}
+              onFile={onFile}
+              onCoverMode={onCoverMode}
+              onOpenWallpapers={onOpenWallpapers}
+            />
+          ) : (
+            <SystemSettings />
+          )}
+        </AnimatedHeight>
       </div>
     </div>
   );
 
   return (
     <aside
-      className={`edge-panel edge-right dock dock-right${visible ? ' is-open' : ''}`}
+      className={`edge-panel edge-right dock dock-right${visible ? ' is-open' : ''}${openBall ? ' is-window-open' : ''}`}
+      style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
     >
@@ -868,7 +907,10 @@ export function AccountDock({
 
               <motion.div
                 className="dock-capsule"
-                animate={{ width: expanded ? CAPSULE_W : 0 }}
+                role="button"
+                aria-label={row.name}
+                onClick={() => setOpenBall((v) => (v === row.id ? null : row.id))}
+                animate={{ width: expanded ? capW : 0 }}
                 transition={ROW_SPRING}
               >
                 <div className="dock-capsule-inner">
@@ -889,15 +931,17 @@ export function AccountDock({
                             </span>
                           );
                         })}
-                        <span className="dock-cap-login-text">
-                          <JumpText text={loggedCount ? `${loggedCount}/5 已登录` : '未登录'} />
-                        </span>
                       </div>
                     ) : (
                       <div className="dock-cap-label">
                         <JumpText text="自定义歌词 · 布局 · 背景 · 系统" />
                       </div>
                     ))}
+                  {row.id === 'login' && (
+                    <span className="dock-cap-login-text">
+                      <JumpText text={loggedCount ? `${loggedCount}/5 已登录` : '未登录'} />
+                    </span>
+                  )}
                 </div>
               </motion.div>
 
@@ -905,8 +949,8 @@ export function AccountDock({
                 <motion.div
                   layout
                   className="dock-window"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
+                  initial={{ height: 0, opacity: 0, y: -4 }}
+                  animate={{ height: 'auto', opacity: 1, y: 0 }}
                   transition={WIN_SPRING}
                 >
                   {row.id === 'login' ? loginWindow : settingsWindow}
