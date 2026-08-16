@@ -1,22 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { motion } from 'motion/react';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from './BackgroundLayer';
 import type { LyricVisualSettings } from './LyricsLayer';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
-import { useDockMetrics } from '../lib/dock';
 
-export type DockSettingsPage = 'lyrics' | 'interface' | 'background' | 'system';
+export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';
 
 interface AccountDockProps {
   visible: boolean;
   platforms: DesktopLoginPlatform[];
   accounts: Record<string, AccountState>;
   selectedPlatform: string;
-  /** 外部「去登录」请求计数：变化时打开登录球并选中对应平台。 */
+  /** 外部「去登录」请求计数：变化时打开登录胶囊并选中对应平台。 */
   loginNonce: number;
   bgSetting: BackgroundSetting;
   coverMode: CoverBgMode;
@@ -44,240 +42,36 @@ interface AccountDockProps {
   onToggleHideLyrics: () => void;
 }
 
-const ROW_SPRING = { type: 'spring' as const, stiffness: 430, damping: 30 };
-const WIN_SPRING = { type: 'spring' as const, stiffness: 240, damping: 28 };
-
-const rowVariants = {
-  hidden: { opacity: 0, scale: 0.5, y: 10 },
-  show: (i: number) => ({
-    opacity: 1,
-    scale: 1,
-    y: 0,
-    transition: { type: 'spring' as const, stiffness: 500, damping: 24, delay: 0.03 + i * 0.06 },
-  }),
-};
-
-/** 小跳字动画：字符逐个弹性入场。 */
-function JumpText({ text, delay = 0 }: { text: string; delay?: number }) {
-  return (
-    <span className="jump-text" aria-label={text}>
-      {Array.from(text).map((ch, i) => (
-        <motion.span
-          key={i}
-          className="jump-char"
-          initial={{ opacity: 0, y: 9, scale: 0.5 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 560, damping: 25, delay: delay + i * 0.016 }}
-        >
-          {ch}
-        </motion.span>
-      ))}
-    </span>
-  );
-}
-
-/** 液态开关（Toggle Switch）：轨道 + 圆点，hover 轻微放大，为未来液态主题铺路。 */
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className={`ui-toggle fx-medium${checked ? ' is-on' : ''}`}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="ui-toggle-liquid">
-        <span className="ui-toggle-fill" />
-        <span className="ui-toggle-blob" />
-      </span>
-    </button>
-  );
-}
-
-/** 设置内容高度动画：切换页面时仅从卡片下部延展/收缩。 */
-function AnimatedHeight({ children }: { children: React.ReactNode }) {
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number | 'auto'>('auto');
-  useEffect(() => {
-    const el = innerRef.current;
-    if (!el) return;
-    const target = el.offsetHeight;
-    setHeight((prev) => {
-      if (prev === 'auto' || Math.abs((prev as number) - target) < 2) return target;
-      requestAnimationFrame(() => setHeight(target));
-      return prev;
-    });
-  }, [children]);
-  return (
-    <div className="dock-anim-h">
-      <motion.div animate={{ height }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} style={{ overflow: 'hidden' }}>
-        <div ref={innerRef}>{children}</div>
-      </motion.div>
-    </div>
-  );
-}
-
-/** 歌词设置：字号 / 高亮 / 布局 / 颜色 / 层次 + 加粗开关。 */
-function LyricSettings({
-  setting,
-  onFontSize,
-  onHighlightStyle,
-  onLayerMode,
-  onCurrentScale,
-  onWordRise,
-  onLyricLayout,
-  onLyricColorSource,
-  onCustomColor,
-  onLyricBold,
+/** 开关：silent-otter-72 复刻（原型原样）。 */
+function Toggle({
+  checked,
+  onChange,
+  label,
+  small,
 }: {
-  setting: LyricVisualSettings;
-  onFontSize: (n: number) => void;
-  onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
-  onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
-  onCurrentScale: (n: number) => void;
-  onWordRise: (n: number) => void;
-  onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
-  onLyricColorSource: (s: LyricVisualSettings['lyricColorSource']) => void;
-  onCustomColor: (c: string) => void;
-  onLyricBold: (b: boolean) => void;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  small?: boolean;
 }) {
-  const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   return (
-    <div className="lyric-settings">
-      <div className="ls-card">
-        <h4 className="ls-card-title">基础文字</h4>
-        <label className="ls-row">
-          <span>字体大小</span>
-          <input
-            type="range"
-            min={14}
-            max={maxFont}
-            step={1}
-            value={setting.fontSize}
-            onChange={(e) => onFontSize(Number(e.target.value))}
-          />
-          <em>{setting.fontSize}px</em>
-        </label>
-        <div className="ls-row">
-          <span>歌词加粗</span>
-          <Toggle checked={!!setting.bold} onChange={onLyricBold} label="歌词加粗" />
-        </div>
-      </div>
-      <div className="ls-card">
-        <h4 className="ls-card-title">高亮与动效</h4>
-        <div className="ls-row">
-          <span>高亮风格</span>
-          <div className="ls-seg">
-            <button
-              className={setting.highlightStyle === 'sweep' ? 'active' : ''}
-              onClick={() => onHighlightStyle('sweep')}
-            >
-              扫光填充
-            </button>
-            <button
-              className={setting.highlightStyle === 'float' ? 'active' : ''}
-              onClick={() => onHighlightStyle('float')}
-            >
-              上浮发光
-            </button>
-          </div>
-        </div>
-        <label className="ls-row">
-          <span>当前句放大</span>
-          <input
-            type="range"
-            min={1}
-            max={1.6}
-            step={0.02}
-            value={setting.currentScale}
-            onChange={(e) => onCurrentScale(Number(e.target.value))}
-          />
-          <em>{setting.currentScale.toFixed(2)}×</em>
-        </label>
-        <label className="ls-row">
-          <span>逐字上浮</span>
-          <input
-            type="range"
-            min={0}
-            max={12}
-            step={1}
-            value={setting.wordRise}
-            onChange={(e) => onWordRise(Number(e.target.value))}
-          />
-          <em>{setting.wordRise}px</em>
-        </label>
-      </div>
-      <div className="ls-card">
-        <h4 className="ls-card-title">布局与层级</h4>
-        <div className="ls-row">
-          <span>歌词布局</span>
-          <div className="ls-seg">
-            <button
-              className={setting.lyricLayout === 'stacked' ? 'active' : ''}
-              onClick={() => onLyricLayout('stacked')}
-            >
-              上下堆叠
-            </button>
-            <button
-              className={setting.lyricLayout === 'offset' ? 'active' : ''}
-              onClick={() => onLyricLayout('offset')}
-            >
-              上下错落
-            </button>
-          </div>
-        </div>
-        <div className="ls-row">
-          <span>歌词取色</span>
-          <div className="ls-seg">
-            <button
-              className={setting.lyricColorSource === 'cover' ? 'active' : ''}
-              onClick={() => onLyricColorSource('cover')}
-            >
-              封面取色
-            </button>
-            <button
-              className={setting.lyricColorSource === 'custom' ? 'active' : ''}
-              onClick={() => onLyricColorSource('custom')}
-            >
-              自定义
-            </button>
-          </div>
-        </div>
-        {setting.lyricColorSource === 'custom' && (
-          <label className="ls-row">
-            <span>基色</span>
-            <input
-              type="color"
-              value={setting.customColor}
-              onChange={(e) => onCustomColor(e.target.value)}
-              style={{ width: 42, height: 24, border: 'none', background: 'none', cursor: 'pointer' }}
-            />
-          </label>
-        )}
-        <div className="ls-row">
-          <span>悬浮层次</span>
-          <div className="ls-seg">
-            <button
-              className={setting.layerMode === 'under' ? 'active' : ''}
-              onClick={() => onLayerMode('under')}
-            >
-              卡片之下
-            </button>
-            <button
-              className={setting.layerMode === 'over' ? 'active' : ''}
-              onClick={() => onLayerMode('over')}
-            >
-              卡片之上
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <label className={`switch${small ? ' sm' : ''}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={label}
+      />
+      <span className="slider">
+        <svg className="slider-icon" viewBox="0 0 12 12" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 6.4 5.1 8.5 9 4.2" />
+        </svg>
+      </span>
+    </label>
   );
 }
 
-/** 网易云：官方库二维码登录。 */
+/** 网易云：官方库二维码登录（主项目既有实现）。 */
 function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
   const [status, setStatus] = useState('');
@@ -356,7 +150,7 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-/** QQ 音乐：官方登录页 + 粘贴 Cookie。 */
+/** QQ 音乐：官方登录页 + 粘贴 Cookie（主项目既有实现）。 */
 function QqLogin({ onSuccess }: { onSuccess: () => void }) {
   const [cookieMode, setCookieMode] = useState(false);
   const [cookieText, setCookieText] = useState('');
@@ -511,169 +305,9 @@ const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
   { id: 'palette', name: '仅取色' },
 ];
 
-/** 背景设置：三大玻璃方案卡 + 封面二级模式展开。 */
-function BackgroundSettings({
-  bgSetting,
-  coverMode,
-  onSelect,
-  onFile,
-  onCoverMode,
-  onOpenWallpapers,
-}: {
-  bgSetting: BackgroundSetting;
-  coverMode: CoverBgMode;
-  onSelect: (s: BackgroundSetting) => void;
-  onFile: (f: File) => void;
-  onCoverMode: (m: CoverBgMode) => void;
-  onOpenWallpapers: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [scheme, setScheme] = useState<'custom' | 'wallpaper' | 'cover'>(
-    bgSetting.type === 'cover' ? 'cover' : 'custom',
-  );
-  const isCover = scheme === 'cover';
-
-  return (
-    <div className="bg-schemes-wrap">
-      <div className={`bg-schemes${isCover ? ' is-cover' : ''}`}>
-        <button
-          type="button"
-          className={`bg-scheme fx-medium${scheme === 'custom' ? ' is-active' : ''}`}
-          onClick={() => {
-            setScheme('custom');
-            inputRef.current?.click();
-          }}
-        >
-          <span className="bs-title">自定义背景</span>
-          <span className="bs-desc">上传图片 / 视频作为背景</span>
-        </button>
-        <button
-          type="button"
-          className={`bg-scheme fx-medium${scheme === 'wallpaper' ? ' is-active' : ''}`}
-          onClick={() => {
-            setScheme('wallpaper');
-            onOpenWallpapers();
-          }}
-        >
-          <span className="bs-title">Wallpaper 壁纸</span>
-          <span className="bs-desc">从本机 Wallpaper Engine 库选择</span>
-        </button>
-        <button
-          type="button"
-          className={`bg-scheme fx-medium${isCover ? ' is-active' : ''}`}
-          onClick={() => {
-            setScheme('cover');
-            onSelect({ type: 'cover' });
-          }}
-        >
-          <span className="bs-title">跟随当前播放歌曲封面</span>
-          <span className="bs-desc">自动加载正在播放歌曲的封面作为背景</span>
-        </button>
-      </div>
-      {isCover && (
-        <motion.div
-          className="dock-cover-modes"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        >
-          {COVER_MODES.map((m) => (
-            <button
-              key={m.id}
-              className={`bg-mode-btn fx-soft${coverMode === m.id ? ' active' : ''}`}
-              onClick={() => onCoverMode(m.id)}
-            >
-              {m.name}
-            </button>
-          ))}
-        </motion.div>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*,video/*"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
-          e.target.value = '';
-        }}
-      />
-      <p className="bg-hint">视频与大于 2.5MB 的图片仅在本次会话生效</p>
-    </div>
-  );
-}
-
-/** 界面设置：沉浸模式（隐藏 Z2 卡片 / 隐藏 Z1 歌词）。 */
-function InterfaceSettings({
-  uiHideCards,
-  uiHideLyrics,
-  onToggleHideCards,
-  onToggleHideLyrics,
-}: {
-  uiHideCards: boolean;
-  uiHideLyrics: boolean;
-  onToggleHideCards: () => void;
-  onToggleHideLyrics: () => void;
-}) {
-  return (
-    <div className="ui-settings">
-      <div className="ui-row">
-        <div className="ui-row-text">
-          <span>隐藏主界面歌曲卡片</span>
-          <em>沉浸式欣赏壁纸与歌词时隐藏 Z2 卡片云</em>
-        </div>
-        <Toggle checked={uiHideCards} onChange={onToggleHideCards} label="隐藏主界面歌曲卡片" />
-      </div>
-      <div className="ui-row">
-        <div className="ui-row-text">
-          <span>隐藏空域歌词层</span>
-          <em>隐藏 Z1 穿梭歌词，仅保留壁纸沉浸效果</em>
-        </div>
-        <Toggle checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏空域歌词层" />
-      </div>
-    </div>
-  );
-}
-
-/** 系统设置：主题（液态预留）/ 会话记忆 / 关于。 */
-function SystemSettings() {
-  return (
-    <div className="ui-settings">
-      <div className="ui-row">
-        <div className="ui-row-text">
-          <span>界面主题</span>
-          <em>材质主题切换；液态玻璃开发中，后续上线</em>
-        </div>
-        <div className="ls-seg">
-          <button className="active" title="当前主题">
-            磨砂玻璃
-          </button>
-          <button disabled title="开发中">
-            液态玻璃
-          </button>
-        </div>
-      </div>
-      <div className="ui-row">
-        <div className="ui-row-text">
-          <span>会话记忆</span>
-          <em>自动恢复上次导入的歌单与播放歌曲</em>
-        </div>
-        <b className="ui-row-value">已启用</b>
-      </div>
-      <div className="ui-row">
-        <div className="ui-row-text">
-          <span>关于</span>
-          <em>Music Nebula v0.1.0 · Electron 桌面音乐播放器</em>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
- * 右侧 Dock：登录 / 设置 两球 → 胶囊 → 上移展开窗口。
- * 与左侧 Dock 对称，共用小球/胶囊/窗口交互语言。
+ * 右侧 Dock（登录 / 设置）—— 原型 dock-prototype-v3.html 的逐行移植。
+ * 视觉真源：prototype/dock-prototype-v3.html（用户已验证定稿，勿改结构/类名）。
  */
 export function AccountDock({
   visible,
@@ -706,260 +340,407 @@ export function AccountDock({
   onToggleHideCards,
   onToggleHideLyrics,
 }: AccountDockProps) {
-  const capW = useDockMetrics();
-  const [hoverBall, setHoverBall] = useState<'login' | 'settings' | null>(null);
-  const [openBall, setOpenBall] = useState<'login' | 'settings' | null>(null);
+  const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
   const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('system');
+  const [bgScheme, setBgScheme] = useState<'custom' | 'wallpaper' | 'cover'>(
+    bgSetting.type === 'cover' ? 'cover' : 'custom',
+  );
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const flipRef = useRef<{ id: string; from: number } | null>(null);
+  const bgInputRef = useRef<HTMLInputElement>(null);
 
   const loggedCount = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn).length;
   const avatarUrl =
     DOCK_PLATFORM_ORDER.map((p) => accounts[p]).find((a) => a?.loggedIn && a.avatarUrl)?.avatarUrl ?? null;
 
-  // 外部「去登录」：打开登录球窗口并选中对应平台
+  // 外部「去登录」：打开登录胶囊并选中对应平台
   useEffect(() => {
     if (!loginNonce) return;
     setActivePlatform(selectedPlatform);
-    setOpenBall('login');
-    setHoverBall(null);
+    setOpenRow('login');
   }, [loginNonce, selectedPlatform]);
-
-  // 设置窗口每次打开默认进入系统设置页
-  useEffect(() => {
-    if (openBall === 'settings') setSettingsPage('system');
-  }, [openBall]);
 
   // 面板收回时复位
   useEffect(() => {
-    if (!visible) {
-      setHoverBall(null);
-      setOpenBall(null);
-    }
+    if (!visible) setOpenRow(null);
   }, [visible]);
 
+  // 原型 flipRow：开/关窗口时该行 FLIP 上移置顶，dock 整体上移
+  useLayoutEffect(() => {
+    const f = flipRef.current;
+    flipRef.current = null;
+    if (!f) return;
+    const row = rowRefs.current.get(f.id);
+    if (!row) return;
+    const to = row.getBoundingClientRect().top;
+    const dy = f.from - to;
+    if (Math.abs(dy) < 1) return;
+    row.style.transition = 'none';
+    row.style.transform = `translateY(${dy}px)`;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        row.style.transition = 'transform 0.55s var(--jelly-win)';
+        row.style.transform = 'translateY(0)';
+      });
+    });
+  }, [openRow]);
+
+  const handleRowClick = (id: 'login' | 'settings') => {
+    const row = rowRefs.current.get(id);
+    flipRef.current = { id, from: row ? row.getBoundingClientRect().top : 0 };
+    setOpenRow((v) => (v === id ? null : id));
+  };
+
   const info = platforms.find((p) => p.platform === activePlatform);
-  const rows: Array<{ id: 'login' | 'settings'; name: string }> = [
-    { id: 'login', name: '账号登录' },
-    { id: 'settings', name: '设置' },
-  ];
+  const activeAccount = accounts[activePlatform];
+
+  const loginDetail = activeAccount?.loggedIn ? (
+    <>
+      <div className="acct-name">{activeAccount.nickname ?? '已登录'}</div>
+      <div className="acct-vip">
+        {activeAccount.isSvip ? 'SVIP' : activeAccount.isVip ? 'VIP' : '普通用户'} · {platformMeta(activePlatform).name}
+      </div>
+      <button
+        className="ghost-btn"
+        onClick={() => window.nebulaAPI?.clearCookie(activePlatform).then(() => onRefreshAccount(activePlatform))}
+      >
+        退出登录
+      </button>
+    </>
+  ) : info ? (
+    <PlatformLogin
+      platform={info.platform}
+      info={info}
+      account={accounts[info.platform]}
+      onRefresh={onRefreshAccount}
+    />
+  ) : null;
+
+  const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
+  const seg = (active: boolean, label: React.ReactNode, onClick: () => void) => (
+    <span className={active ? 'active' : ''} onClick={onClick}>
+      {label}
+    </span>
+  );
 
   const loginWindow = (
-    <div className="dock-window-body">
-      <div className="dock-win-head">
-        <span className="dock-win-title">账号登录</span>
-        <span className="dock-win-sub">{loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录</span>
+    <>
+      <div className="win-title">
+        <span>账号登录</span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>
+          {loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录
+        </span>
       </div>
-      <div className="dock-login-plats" style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}>
-        {DOCK_PLATFORM_ORDER.map((p, i) => {
+      <div className="login-cards">
+        {DOCK_PLATFORM_ORDER.map((p) => {
           const meta = platformMeta(p);
           const on = !!accounts[p]?.loggedIn;
           return (
-            <motion.button
+            <div
               key={p}
-              type="button"
-              className={`dock-lp-card fx-medium${activePlatform === p ? ' is-active' : ''}${on ? ' is-on' : ''}`}
+              className={`lc${activePlatform === p ? ' is-active' : ''}${on ? ' is-on' : ''}`}
               style={{ '--brand': meta.brand } as React.CSSProperties}
-              initial={{ opacity: 0, y: 10, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 430, damping: 30, delay: 0.04 + i * 0.05 }}
               onClick={() => {
                 setActivePlatform(p);
                 onSelectPlatform(p);
               }}
             >
-              <span className="dock-lp-icon">
-                <img src={meta.logo} alt="" draggable={false} />
-              </span>
-              <span className="dock-lp-name">
-                <JumpText text={meta.name} delay={0.08 + i * 0.05} />
-              </span>
-              <span className="dock-lp-state">{on ? '已登录' : '未登录'}</span>
-            </motion.button>
+              <div className="lc-inner">
+                <span className="lc-head">
+                  <img src={meta.logo} alt="" draggable={false} />
+                </span>
+                <div className="lc-body">
+                  <span className="nm">{meta.name}</span>
+                  <span className="st">{on ? '已登录' : '未登录'}</span>
+                </div>
+              </div>
+            </div>
           );
         })}
       </div>
-      <div className="dock-login-detail">
-        {info && (
-          <PlatformLogin
-            platform={info.platform}
-            info={info}
-            account={accounts[info.platform]}
-            onRefresh={onRefreshAccount}
-          />
-        )}
-      </div>
-    </div>
+      <div className="login-detail">{loginDetail}</div>
+    </>
   );
 
   const settingsWindow = (
-    <div className="dock-window-body">
-      <div className="dock-win-head">
-        <span className="dock-win-title">设置</span>
+    <>
+      <div className="win-title">
+        <span>设置</span>
       </div>
-      <div className="dock-settings-tabs">
-        {(
-          [
-            ['lyrics', '歌词设置'],
-            ['interface', '界面设置'],
-            ['background', '背景设置'],
-            ['system', '系统设置'],
-          ] as Array<[DockSettingsPage, string]>
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`fx-soft${settingsPage === id ? ' active' : ''}`}
-            onClick={() => setSettingsPage(id)}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="set-tabs">
+        {seg(settingsPage === 'lyrics', '歌词设置', () => setSettingsPage('lyrics'))}
+        {seg(settingsPage === 'ui', '界面设置', () => setSettingsPage('ui'))}
+        {seg(settingsPage === 'bg', '背景设置', () => setSettingsPage('bg'))}
+        {seg(settingsPage === 'system', '系统设置', () => setSettingsPage('system'))}
       </div>
-      <div className="dock-settings-body">
-        <AnimatedHeight>
-          {settingsPage === 'lyrics' ? (
-            <LyricSettings
-              setting={lyricSettings}
-              onFontSize={onFontSize}
-              onHighlightStyle={onHighlightStyle}
-              onLayerMode={onLayerMode}
-              onCurrentScale={onCurrentScale}
-              onWordRise={onWordRise}
-              onLyricLayout={onLyricLayout}
-              onLyricColorSource={onLyricColorSource}
-              onCustomColor={onCustomColor}
-              onLyricBold={onLyricBold}
+
+      <div className={`set-page${settingsPage === 'lyrics' ? ' active' : ''}`}>
+        <div className="ls-card">
+          <h4>基础文字</h4>
+          <div className="ls-row">
+            <span>字体大小</span>
+            <input
+              type="range"
+              min={14}
+              max={maxFont}
+              step={1}
+              value={lyricSettings.fontSize}
+              onChange={(e) => onFontSize(Number(e.target.value))}
             />
-          ) : settingsPage === 'interface' ? (
-            <InterfaceSettings
-              uiHideCards={uiHideCards}
-              uiHideLyrics={uiHideLyrics}
-              onToggleHideCards={onToggleHideCards}
-              onToggleHideLyrics={onToggleHideLyrics}
+            <span className="val">{lyricSettings.fontSize}px</span>
+          </div>
+          <div className="ls-row">
+            <span>歌词加粗</span>
+            <span className="val" style={{ marginLeft: 'auto' }}>
+              <Toggle small checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
+            </span>
+          </div>
+        </div>
+        <div className="ls-card">
+          <h4>高亮与动效</h4>
+          <div className="ls-row">
+            <span>高亮风格</span>
+            <span className="ls-seg">
+              {seg(lyricSettings.highlightStyle === 'sweep', '扫光填充', () => onHighlightStyle('sweep'))}
+              {seg(lyricSettings.highlightStyle === 'float', '上浮发光', () => onHighlightStyle('float'))}
+            </span>
+          </div>
+          <div className="ls-row">
+            <span>当前句放大</span>
+            <input
+              type="range"
+              min={1}
+              max={1.6}
+              step={0.02}
+              value={lyricSettings.currentScale}
+              onChange={(e) => onCurrentScale(Number(e.target.value))}
             />
-          ) : settingsPage === 'background' ? (
-            <BackgroundSettings
-              bgSetting={bgSetting}
-              coverMode={coverMode}
-              onSelect={onSelectBg}
-              onFile={onFile}
-              onCoverMode={onCoverMode}
-              onOpenWallpapers={onOpenWallpapers}
+            <span className="val">{lyricSettings.currentScale.toFixed(2)}×</span>
+          </div>
+          <div className="ls-row">
+            <span>逐字上浮</span>
+            <input
+              type="range"
+              min={0}
+              max={12}
+              step={1}
+              value={lyricSettings.wordRise}
+              onChange={(e) => onWordRise(Number(e.target.value))}
             />
-          ) : (
-            <SystemSettings />
+            <span className="val">{lyricSettings.wordRise}px</span>
+          </div>
+        </div>
+        <div className="ls-card">
+          <h4>布局与层级</h4>
+          <div className="ls-row">
+            <span>歌词布局</span>
+            <span className="ls-seg">
+              {seg(lyricSettings.lyricLayout === 'stacked', '上下堆叠', () => onLyricLayout('stacked'))}
+              {seg(lyricSettings.lyricLayout === 'offset', '上下错落', () => onLyricLayout('offset'))}
+            </span>
+          </div>
+          <div className="ls-row">
+            <span>歌词取色</span>
+            <span className="ls-seg">
+              {seg(lyricSettings.lyricColorSource === 'cover', '封面取色', () => onLyricColorSource('cover'))}
+              {seg(
+                lyricSettings.lyricColorSource === 'custom',
+                <span className="ls-opt">自定义</span>,
+                () => onLyricColorSource('custom'),
+              )}
+            </span>
+          </div>
+          {lyricSettings.lyricColorSource === 'custom' && (
+            <div className="ls-row">
+              <span>基色</span>
+              <input
+                type="color"
+                value={lyricSettings.customColor}
+                onChange={(e) => onCustomColor(e.target.value)}
+                style={{ width: 42, height: 24, border: 'none', background: 'none', cursor: 'pointer' }}
+              />
+            </div>
           )}
-        </AnimatedHeight>
+          <div className="ls-row">
+            <span>悬浮层次</span>
+            <span className="ls-seg">
+              {seg(lyricSettings.layerMode === 'under', '卡片之下', () => onLayerMode('under'))}
+              {seg(lyricSettings.layerMode === 'over', '卡片之上', () => onLayerMode('over'))}
+            </span>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <div className={`set-page${settingsPage === 'ui' ? ' active' : ''}`}>
+        <div className="ui-row">
+          <div className="txt">
+            <span>隐藏主界面歌曲卡片</span>
+            <em>沉浸式欣赏壁纸与歌词时隐藏 Z2 卡片云</em>
+          </div>
+          <Toggle small checked={uiHideCards} onChange={onToggleHideCards} label="隐藏主界面歌曲卡片" />
+        </div>
+        <div className="ui-row">
+          <div className="txt">
+            <span>隐藏空域歌词层</span>
+            <em>隐藏 Z1 穿梭歌词，仅保留壁纸沉浸效果</em>
+          </div>
+          <Toggle small checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏空域歌词层" />
+        </div>
+      </div>
+
+      <div className={`set-page${settingsPage === 'bg' ? ' active' : ''}`}>
+        <button
+          type="button"
+          className={`bg-scheme fx-medium${bgScheme === 'custom' ? ' is-active' : ''}`}
+          onClick={() => {
+            setBgScheme('custom');
+            bgInputRef.current?.click();
+          }}
+        >
+          <span className="bs-title">自定义背景</span>
+          <span className="bs-desc">上传图片 / 视频作为背景</span>
+        </button>
+        <button
+          type="button"
+          className={`bg-scheme fx-medium${bgScheme === 'wallpaper' ? ' is-active' : ''}`}
+          onClick={() => {
+            setBgScheme('wallpaper');
+            onOpenWallpapers();
+          }}
+        >
+          <span className="bs-title">Wallpaper 壁纸</span>
+          <span className="bs-desc">从本机 Wallpaper Engine 库选择</span>
+        </button>
+        <button
+          type="button"
+          className={`bg-scheme fx-medium${bgScheme === 'cover' ? ' is-active' : ''}`}
+          onClick={() => {
+            setBgScheme('cover');
+            onSelectBg({ type: 'cover' });
+          }}
+        >
+          <span className="bs-title">跟随当前播放歌曲封面</span>
+          <span className="bs-desc">自动加载正在播放歌曲的封面作为背景</span>
+        </button>
+        <div className="cover-modes">
+          {COVER_MODES.map((m) => (
+            <span key={m.id} className={coverMode === m.id ? 'active' : ''} onClick={() => onCoverMode(m.id)}>
+              {m.name}
+            </span>
+          ))}
+        </div>
+        <input
+          ref={bgInputRef}
+          type="file"
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFile(f);
+            e.target.value = '';
+          }}
+        />
+      </div>
+
+      <div className={`set-page${settingsPage === 'system' ? ' active' : ''}`}>
+        <div className="ui-row">
+          <div className="txt">
+            <span>界面主题</span>
+            <em>材质主题切换；液态玻璃开发中</em>
+          </div>
+          <span className="ls-seg">
+            <span className="active">磨砂玻璃</span>
+            <span style={{ opacity: 0.4 }}>液态玻璃</span>
+          </span>
+        </div>
+        <div className="ui-row">
+          <div className="txt">
+            <span>会话记忆</span>
+            <em>自动恢复上次导入的歌单与播放歌曲</em>
+          </div>
+          <span className="val" style={{ color: '#6ee7b7' }}>
+            已启用
+          </span>
+        </div>
+        <div className="ui-row">
+          <div className="txt">
+            <span>关于</span>
+            <em>Music Nebula v0.1.0 · Electron 桌面音乐播放器</em>
+          </div>
+        </div>
+      </div>
+    </>
   );
 
   return (
-    <aside
-      className={`edge-panel edge-right dock dock-right${visible ? ' is-open' : ''}${openBall ? ' is-window-open' : ''}`}
-      style={{ '--dock-cap-w': `${capW}px` } as React.CSSProperties}
+    <div
+      className={`dock dock-right${visible ? ' is-open' : ''}${openRow ? ' has-open' : ''}`}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
     >
-      <div className="dock-stack">
-        {rows.map((row, i) => {
-          const expanded = hoverBall === row.id || openBall === row.id;
-          return (
-            <motion.div
-              layout
-              key={row.id}
-              custom={i}
-              variants={rowVariants}
-              initial="hidden"
-              animate={visible ? 'show' : 'hidden'}
-              className={`dock-row dock-row-${row.id}${openBall === row.id ? ' is-open' : ''}`}
-              style={{ zIndex: 20 + i }}
-              transition={ROW_SPRING}
-              onPointerEnter={() => setHoverBall(row.id)}
-              onPointerLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoverBall(null);
-              }}
-            >
-              <button
-                type="button"
-                className={`dock-ball fx-medium${openBall === row.id ? ' is-open' : ''}`}
-                aria-label={row.name}
-                onClick={() => setOpenBall((v) => (v === row.id ? null : row.id))}
-              >
-                {row.id === 'login' ? (
-                  avatarUrl ? (
-                    <img className="dock-avatar" src={avatarUrl} alt="" draggable={false} />
-                  ) : (
-                    <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M4 21c1.2-3.8 4.2-5.6 8-5.6s6.8 1.8 8 5.6" />
-                    </svg>
-                  )
-                ) : (
-                  <svg className="dock-user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10" />
-                    <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10" />
-                  </svg>
-                )}
-                {row.id === 'login' && loggedCount > 0 && <span className="dock-dot" title={`${loggedCount} 个平台已登录`} />}
-              </button>
-
-              <motion.div
-                className="dock-capsule"
-                role="button"
-                aria-label={row.name}
-                onClick={() => setOpenBall((v) => (v === row.id ? null : row.id))}
-                animate={{ width: expanded ? capW : 0 }}
-                transition={ROW_SPRING}
-              >
-                <div className="dock-capsule-inner">
-                  {expanded &&
-                    (row.id === 'login' ? (
-                      <div className="dock-cap-logins">
-                        {DOCK_PLATFORM_ORDER.map((p) => {
-                          const meta = platformMeta(p);
-                          const on = !!accounts[p]?.loggedIn;
-                          return (
-                            <span
-                              key={p}
-                              className={`dock-cap-logo${on ? ' is-on' : ''}`}
-                              style={{ '--brand': meta.brand } as React.CSSProperties}
-                              title={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
-                            >
-                              <img src={meta.logo} alt="" draggable={false} />
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="dock-cap-label">
-                        <JumpText text="自定义歌词 · 布局 · 背景 · 系统" />
-                      </div>
-                    ))}
-                  {row.id === 'login' && (
-                    <span className="dock-cap-login-text">
-                      <JumpText text={loggedCount ? `${loggedCount}/5 已登录` : '未登录'} />
-                    </span>
-                  )}
-                </div>
-              </motion.div>
-
-              {openBall === row.id && (
-                <motion.div
-                  layout
-                  className="dock-window"
-                  initial={{ height: 0, opacity: 0, y: -4 }}
-                  animate={{ height: 'auto', opacity: 1, y: 0 }}
-                  transition={WIN_SPRING}
+      <div
+        ref={(el) => {
+          if (el) rowRefs.current.set('login', el);
+          else rowRefs.current.delete('login');
+        }}
+        className={`row${openRow === 'login' ? ' open' : ''}`}
+        data-name="login"
+        style={{ '--brand': '#8b93b8' } as React.CSSProperties}
+      >
+        <button type="button" className="pill" onClick={() => handleRowClick('login')}>
+          <span
+            className="icon"
+            style={avatarUrl ? undefined : { background: 'linear-gradient(135deg,#5f6c9e,#2c3352)' }}
+          >
+            {avatarUrl ? <img src={avatarUrl} alt="" draggable={false} /> : '人'}
+          </span>
+          <span className="dots">
+            {DOCK_PLATFORM_ORDER.map((p) => {
+              const meta = platformMeta(p);
+              const on = !!accounts[p]?.loggedIn;
+              return (
+                <span
+                  key={p}
+                  className={`dot${on ? ' is-on' : ''}`}
+                  style={{ '--brand': meta.brand } as React.CSSProperties}
+                  title={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
                 >
-                  {row.id === 'login' ? loginWindow : settingsWindow}
-                </motion.div>
-              )}
-            </motion.div>
-          );
-        })}
+                  <img src={meta.logo} alt="" draggable={false} />
+                </span>
+              );
+            })}
+          </span>
+          <span className="badge">
+            {loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录
+          </span>
+          <span className="go">›</span>
+        </button>
+        <div className="win">
+          <div className="win-inner">{loginWindow}</div>
+        </div>
       </div>
-    </aside>
+
+      <div
+        ref={(el) => {
+          if (el) rowRefs.current.set('settings', el);
+          else rowRefs.current.delete('settings');
+        }}
+        className={`row${openRow === 'settings' ? ' open' : ''}`}
+        data-name="settings"
+        style={{ '--brand': '#8b93b8' } as React.CSSProperties}
+      >
+        <button type="button" className="pill" onClick={() => handleRowClick('settings')}>
+          <span className="icon" style={{ fontSize: 13 }}>
+            ⚙
+          </span>
+          <span className="cap-text">自定义歌词 · 布局 · 背景 · 系统</span>
+          <span className="go">›</span>
+        </button>
+        <div className="win">
+          <div className="win-inner">{settingsWindow}</div>
+        </div>
+      </div>
+    </div>
   );
 }

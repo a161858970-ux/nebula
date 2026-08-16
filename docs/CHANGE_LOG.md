@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-08-16 — Dock 代码级迁移：Prototype 即视觉真源（重做）
+
+**背景**
+
+- 上一版「参考原型改造」整合出错（旧 CSS/组件结构与原型冲突导致变形爆炸），已 `git revert` 回退。
+- 本次改为**代码级迁移**：把用户已验证定稿的 `prototype/dock-prototype-v3.html` 作为唯一视觉真源，CSS 原样搬入、React 组件按原型 DOM 结构逐行移植，不重新设计。
+
+**改动**
+
+- 原型 `<style>` 整段原样追加至 styles.css 末尾（标注「Prototype v3 视觉真源，勿改」）；仅移除会污染全局的 `body` 规则与会被主项目歌单 hover 覆盖的 `.pl-song:hover`（歌曲列表 hover 按用户要求保持主项目原实现）。
+- 运行环境差异适配（仅功能层面，不改视觉）：z-index 10→80（保证在画布之上）；边缘感应隐藏态（`:not(.is-open)` 隐藏/移出，应用内为边缘触发，原型常驻）；中和主项目全局 button 高光避免污染原型视觉；平台 logo/头像图片尺寸规则（原型用字母占位，应用用真实 logo，填充色效果保留）。
+- PlaylistDock / AccountDock 按原型 DOM 重写：`.dock > .row > .pill + .win > .win-inner`，纯 CSS 单元素自膨胀（球=胶囊）、窗口覆盖胶囊无接缝、四角=胶囊边缘圆四分之一、箭头 ›→⌄→⌃、左 Dock 开窗垂直居中、登录五球各自膨胀成垂直胶囊、set-tabs/set-page 分页、silent-otter 开关；FLIP 置顶用原生 DOM（无 motion/JumpText）。
+- 手动导入输入框放在手动球展开的窗口内（原型标注「输入框示意」的位置），导入按钮/状态复用 ImportBar。
+
+**验证**
+
+- 无头 Chrome 逐项对比原型 vs 主项目：closed/hover/open/loginDots/settingsArrow 全部一致（球 42px、胶囊 300px、开窗顶距=底距 81/819、圆角 21px、登录点列位、设置箭头贴左），零控制台错误；开关为同一 CSS 的大小号变体（比例一致、勾号独立动感一致）。
+- pnpm build / qa / build:desktop 全绿；已提交并推送 GitHub。
+
 ## 2026-08-16 — Dock 细节优化：一体化变形 + 比例化 + 设置排版精修
 
 **改动**

@@ -303,9 +303,9 @@ async function main() {
   await page.mouse.move(1596, 420);
   await page.waitForTimeout(600);
   // 打开「设置」球窗口（默认系统设置页）→ 切到背景设置
-  await page.locator('.dock-row-settings .dock-ball').click();
+  await page.locator('.dock .row[data-name="settings"] .pill').click();
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: '背景设置', exact: true }).click();
+  await page.locator('.set-tabs span', { hasText: '背景设置' }).click();
   await page.waitForTimeout(400);
   // 跟随当前播放歌曲封面（底部第三张方案卡）；无歌单时回退隐藏的午夜星空
   await page.locator('.bg-scheme').nth(2).click();
@@ -333,10 +333,13 @@ async function main() {
   // 左侧歌单 Dock 由边缘感应触发；先悬浮「手动导入」球展开胶囊
   await page.mouse.move(4, 420);
   await page.waitForTimeout(600);
-  await page.locator('.dock-manual .dock-ball').hover();
+  await page.locator('.dock .row[data-name="manual"] .pill').hover();
   await page.waitForTimeout(500);
-  await page.locator('.import-panel .import-bar input').fill('');
-  await page.locator('.import-panel .import-btn').click();
+  // 手动导入输入框位于手动球展开的窗口内（与原型一致）
+  await page.locator('.dock .row[data-name="manual"] .pill').click();
+  await page.waitForTimeout(700);
+  await page.locator('.dock-manual-panel .import-bar input').fill('');
+  await page.locator('.dock-manual-panel .import-btn').click();
   await page.waitForFunction(() => window.__nebula && window.__nebula.total === 16, null, {
     timeout: 15000,
   });
@@ -354,7 +357,7 @@ async function main() {
   await page.mouse.move(800, 450);
   await page.waitForTimeout(700);
   const edgeHideOk = await page.evaluate(
-    () => !document.querySelector('.edge-left')?.classList.contains('is-open'),
+    () => !document.querySelector('.dock-left')?.classList.contains('is-open'),
   );
   log('左侧面板移出自动收回', edgeHideOk);
 

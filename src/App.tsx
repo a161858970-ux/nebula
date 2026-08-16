@@ -503,7 +503,7 @@ export default function App() {
     const onMove = (e: PointerEvent) => {
       if (contextMenuRef.current) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest('.edge-panel')) return;
+      if (t?.closest('.edge-panel') || t?.closest('.dock')) return;
       const x = e.clientX;
       const y = e.clientY;
       if (y <= EDGE_HOTSPOT) showPanel('top');
