@@ -410,14 +410,21 @@ export function LyricsLayer({
             fl.xOff = (fl.xOff >= 0 ? 1 : -1) * cw * 0.03;
           }
           if (newRole === 'leaving') {
-            // 离开：左右 50%，斜向柔和飞出（1.0–1.4s）
+            // 离开：左右 50%，带 ±1.5°–5° 小角度的非水平柔和飞出（1.0–1.4s）
             const dir = Math.random() < 0.5 ? -1 : 1;
             fl.exitT = 0;
             fl.exitDur = rand(1.0, 1.4);
-            const exitX = dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2;
-            const exitY = fl.sy + rand(-ch * 0.12, ch * 0.06);
-            fl.exitVx = (exitX - fl.sx) / fl.exitDur;
-            fl.exitVy = (exitY - fl.sy) / fl.exitDur;
+            // 左出时目标需让“句尾”越过左边界，避免句尾未出屏即被回收
+            const wPx = lineWidthPx(fl.lineIdx, lines[fl.lineIdx], fl.scale);
+            const exitX = dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2 - wPx;
+            const exitY = fl.sy + rand(-ch * 0.1, ch * 0.08);
+            const dx = exitX - fl.sx;
+            const dy = exitY - fl.sy;
+            const ang = ((Math.random() < 0.5 ? -1 : 1) * rand(1.5, 5) * Math.PI) / 180;
+            const cosA = Math.cos(ang);
+            const sinA = Math.sin(ang);
+            fl.exitVx = (dx * cosA - dy * sinA) / fl.exitDur;
+            fl.exitVy = (dx * sinA + dy * cosA) / fl.exitDur;
           }
         }
         applyRoleVisuals(fl, fl.role);
@@ -522,8 +529,10 @@ export function LyricsLayer({
           }
         }
 
-        // 回收：离场句飞出视口后删除
-        const offscreen = fl.sx < -MARGIN || fl.sx > cw + MARGIN || fl.sy < -MARGIN || fl.sy > ch + MARGIN;
+        // 回收：按出场方向判“整句”越界（左出用句尾，右出用句首），句尾未出屏不删
+        const wPx = lineWidthPx(lineIdx, line, fl.scale);
+        const offX = fl.exitVx > 0 ? fl.sx > cw + MARGIN : fl.sx + wPx < -MARGIN;
+        const offscreen = offX || fl.sy < -MARGIN || fl.sy > ch + MARGIN;
         if (fl.role === 'leaving' && (offscreen || fl.exitT >= 1)) {
           consumedRef.current.add(lineIdx);
           active.delete(lineIdx);

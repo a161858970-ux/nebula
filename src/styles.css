@@ -5648,6 +5648,15 @@ button:hover:not(:disabled),
     margin: 0;
   }
 
+  /* 开窗后胶囊透明本体不拦截窗口内容点击（仅球头图标与箭头可点以关闭） */
+  .row.open .pill {
+    pointer-events: none;
+  }
+  .row.open .pill .icon,
+  .row.open .pill .go {
+    pointer-events: auto;
+  }
+
   /* ---------- 歌单展开修复：胶囊占位改为可滚动垫片，吸顶头真正贴顶 ---------- */
   .row.open .win-inner {
     padding-top: 0;
