@@ -19,7 +19,7 @@
 - Windows PowerShell 下 pnpm 必须带 `$env:pnpm_config_verify_deps_before_run='false'`。
 - 后端统一入口是 `dist-main/index.cjs`（由 `src/main/index.ts` 经 esbuild 打包）；改 `src/main` 后必须 `pnpm build:main` 才能让 Electron 和冒烟测试生效。
 - `pnpm build` 会清空并重建 `outputs/music-nebula/`（README 等内容需在构建后重写，见构建脚本说明）。
-- 本项目不是 git 仓库；文档手动维护。
+- 项目已接入 git（远程 GitHub origin/main）；文档随提交维护（docs/）。
 
 ### 平台登录
 
@@ -36,4 +36,5 @@
 - [ ] 歌词面板双行滚动与高亮联动（LyricParser 已就绪，前端未接）。
 - [ ] 收藏/喜欢状态持久化与“我喜欢”歌单联动。
 - [ ] 播放列表队列 UI（当前为点击卡片即播 + 上下曲顺序播放）。
-- [ ] 评论弹窗/面板渲染（后端 `fetchComments` 已就绪）。
+- [x] 评论弹窗/面板渲染（已完成：底部条评论入口 → 评论页；后端 `fetchComments` 已就绪）。
+- [ ] 左右 Dock 重构（小球 → 胶囊 → 窗口，见 `docs/UI_SPEC.md` §5.7）。
