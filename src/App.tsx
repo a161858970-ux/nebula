@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
-import type { CoverBgMode } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
 import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
@@ -17,17 +16,12 @@ import { useAudioPlayer } from './lib/audio/useAudioPlayer';
 import { CARD_HEIGHT, CARD_WIDTH, SEED, cardScreenPos, computeTileSize, generateCards } from './lib/layout';
 import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from './lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
-import { loadBackground, saveBackground } from './lib/backgrounds';
 import type { BackgroundSetting } from './lib/backgrounds';
-import { DEFAULT_AMBIENT, PRESET_AMBIENT, applyAmbient, sampleMedia } from './lib/bgSampler';
 import {
   SILVER_BLUE,
   coverCssVars,
   lyricPaletteCssVars,
   paletteFromBaseColor,
-  paletteFromSample,
-  sampleCover,
-  sampleMediaElement,
   type CoverSample,
   type LyricPalette,
 } from './lib/coverColors';
@@ -44,6 +38,8 @@ import { usePlaylist } from './hooks/playlist/usePlaylist';
 import { usePlaylistImport, type ImportCommit } from './hooks/playlistImport/usePlaylistImport';
 import { useOverlays } from './hooks/overlays/useOverlays';
 import { useLyrics } from './hooks/lyrics/useLyrics';
+import { useBackground } from './hooks/background/useBackground';
+import { useInterfaceSettings } from './hooks/interfaceSettings/useInterfaceSettings';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -81,15 +77,6 @@ function preferredQuality(): string {
   }
 }
 
-/** 读取布尔型 UI 设置（localStorage 存 '1' / '0'）。 */
-function loadUiBool(key: string): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-
 type EdgeKey = 'top' | 'right' | 'left';
 
 export default function App() {
@@ -109,18 +96,7 @@ export default function App() {
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(new Set());
   const [likedIds, setLikedIds] = useState<ReadonlySet<number>>(new Set());
   const [importing, setImporting] = useState(false);
-  const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
-  const [uiHideCards, setUiHideCards] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-cards'));
-  const [uiHideLyrics, setUiHideLyrics] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-lyrics'));
-  const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
-    const m = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.bg-cover-mode') : null;
-    if (m === 'fill' || m === 'frosted' || m === 'color' || m === 'palette' || m === 'blend' || m === 'prism') {
-      return m;
-    }
-    if (m === 'cinematic') return 'blend';
-    return 'blend';
-  });
 
   // ---------- 多平台账号状态（领域 hook：useAccounts） ----------
   const {
@@ -164,6 +140,19 @@ export default function App() {
     setModeToast,
     setInfoModal,
   } = overlays;
+  // 浮层稳定回调（供 memo 区块与后续领域 hook 使用）
+  const openNowPlaying = useCallback(() => setNowPlayingOpen(true), [setNowPlayingOpen]);
+  const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), [setNowPlayingOpen]);
+  const togglePlay = useCallback(() => audioPlayer.toggle(), []);
+  const playPrev = useCallback(() => audioPlayer.prev(), []);
+  const playNext = useCallback(() => audioPlayer.next(), []);
+  const seekTo = useCallback((t: number) => audioPlayer.seek(t), []);
+  const openWallpapers = useCallback(() => {
+    if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
+    else setWallpaperOpen(true);
+  }, []);
+  const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
+  const closeInfo = useCallback(() => setInfoModal(null), [setInfoModal]);
   // ---------- 歌词领域（useLyrics） ----------
   const lyrics = useLyrics();
   const {
@@ -188,6 +177,24 @@ export default function App() {
   const edgeTimerRef = useRef<Record<EdgeKey, number>>({ top: 0, right: 0, left: 0 });
 
   const playerState = useAudioPlayer();
+
+  // ---------- 背景/界面设置领域（useBackground 产出 VisualAtmosphere；useInterfaceSettings） ----------
+  const background = useBackground({
+    enabled: !isWallpaperView,
+    onApplied: closeWallpaper,
+    coverKey: playerState.song?.cover ?? '',
+  });
+  const {
+    bgSetting,
+    bgCoverMode,
+    atmosphere,
+    handleSelectBg,
+    handleCoverMode,
+    applyWallpaperResult,
+    handleBgFile,
+  } = background;
+  const interfaceSettings = useInterfaceSettings();
+  const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics } = interfaceSettings;
 
   const cards = useMemo(() => generateCards(mulberry32(SEED), songs), [songs]);
   const metrics = useMemo(() => computeTileSize(songs.length), [songs.length]);
@@ -485,18 +492,6 @@ export default function App() {
   const enterLeft = useCallback(() => enterPanel('left'), [enterPanel]);
   const leaveLeft = useCallback(() => leavePanel('left'), [leavePanel]);
 
-  const openNowPlaying = useCallback(() => setNowPlayingOpen(true), [setNowPlayingOpen]);
-  const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), [setNowPlayingOpen]);
-  const togglePlay = useCallback(() => audioPlayer.toggle(), []);
-  const playPrev = useCallback(() => audioPlayer.prev(), []);
-  const playNext = useCallback(() => audioPlayer.next(), []);
-  const seekTo = useCallback((t: number) => audioPlayer.seek(t), []);
-  const openWallpapers = useCallback(() => {
-    if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
-    else setWallpaperOpen(true);
-  }, []);
-  const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
-  const closeInfo = useCallback(() => setInfoModal(null), [setInfoModal]);
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -516,38 +511,11 @@ export default function App() {
     return () => document.removeEventListener('pointermove', onMove);
   }, [showPanel, scheduleHidePanel]);
 
-  // 背景像素采样 → 全局光照 / 歌词 / 玻璃高光配色
-  const currentCover = playerState.song?.cover ?? '';
+  // 歌词配色桥（App 组合层）：从 VisualAtmosphere 推导歌词/封面 CSS 变量。
+  // useBackground 只产出 atmosphere，这里负责"氛围 → 歌词渲染变量"的落地。
   useEffect(() => {
-    if (bgSetting.type === 'preset') {
-      applyAmbient(PRESET_AMBIENT[bgSetting.id] ?? DEFAULT_AMBIENT);
-      return;
-    }
-    const media = document.querySelector<HTMLImageElement | HTMLVideoElement>('.bg-media');
-    if (!media) {
-      applyAmbient(DEFAULT_AMBIENT);
-      return;
-    }
-    const trySample = () => {
-      const s = sampleMedia(media);
-      if (s) applyAmbient(s);
-    };
-    const onLoad = () => trySample();
-    media.addEventListener('load', onLoad);
-    if ((media as HTMLImageElement).complete || (media as HTMLVideoElement).readyState >= 1) trySample();
-    let iv = 0;
-    if (media.tagName === 'VIDEO') iv = window.setInterval(trySample, 3000);
-    return () => {
-      media.removeEventListener('load', onLoad);
-      if (iv) window.clearInterval(iv);
-    };
-  }, [bgSetting, currentCover]);
-
-  // 歌词赋色：跟随当前背景（封面/自定义上传/Wallpaper）自动取色，或自定义基色
-  useEffect(() => {
-    let cancelled = false;
+    const root = document.documentElement;
     const apply = (palette: LyricPalette, sample: CoverSample | null): void => {
-      const root = document.documentElement;
       const vars = { ...lyricPaletteCssVars(palette), ...coverCssVars(sample) };
       for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
     };
@@ -555,65 +523,9 @@ export default function App() {
       apply(paletteFromBaseColor(lyricSettings.customColor), null);
       return;
     }
-    const media = document.querySelector<HTMLImageElement | HTMLVideoElement>('.bg-media');
-    const trySample = (): void => {
-      if (cancelled) return;
-      if (
-        media &&
-        (media instanceof HTMLImageElement
-          ? media.complete && media.naturalWidth > 0
-          : media.readyState >= 1)
-      ) {
-        sampleMediaElement(media)
-          .then((s) => {
-            if (!cancelled) apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
-          })
-          .catch(() => {
-            if (!cancelled) apply(SILVER_BLUE, null);
-          });
-      } else {
-        apply(SILVER_BLUE, null);
-      }
-    };
-    if (!media) {
-      const src = playerState.song?.cover;
-      if (!src) {
-        apply(SILVER_BLUE, null);
-      } else {
-        sampleCover(src)
-          .then((s) => {
-            if (!cancelled) apply(s ? paletteFromSample(s) : SILVER_BLUE, s);
-          })
-          .catch(() => {
-            if (!cancelled) apply(SILVER_BLUE, null);
-          });
-      }
-    } else {
-      trySample();
-      media.addEventListener('load', trySample);
-      media.addEventListener('loadeddata', trySample);
-      return () => {
-        cancelled = true;
-        media.removeEventListener('load', trySample);
-        media.removeEventListener('loadeddata', trySample);
-      };
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [bgSetting, playerState.song?.cover, lyricSettings.lyricColorSource, lyricSettings.customColor]);
-
-  // 壁纸子窗口应用结果 → 主窗口设置背景
-  useEffect(() => {
-    if (!hasDesktopAPI() || isWallpaperView) return;
-    const off = window.nebulaAPI!.onWallpaperApplied((data) => {
-      if ('url' in data) {
-        setBgSetting({ type: data.type, url: data.url });
-        setWallpaperOpen(false);
-      }
-    });
-    return off;
-  }, [isWallpaperView]);
+    if (atmosphere.palette) apply(atmosphere.palette, atmosphere.sample);
+    else apply(SILVER_BLUE, null);
+  }, [lyricSettings.lyricColorSource, lyricSettings.customColor, atmosphere]);
 
   // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
   useEffect(() => {
@@ -864,71 +776,14 @@ export default function App() {
     });
   }, []);
 
-  const handleSelectBg = useCallback((s: BackgroundSetting) => {
-    setBgSetting(s);
-    saveBackground(s);
-  }, []);
-
-  const toggleHideCards = useCallback(() => {
-    setUiHideCards((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem('music-nebula.ui-hide-cards', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-  const toggleHideLyrics = useCallback(() => {
-    setUiHideLyrics((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem('music-nebula.ui-hide-lyrics', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-  const handleCoverMode = useCallback((m: CoverBgMode) => {
-    setBgCoverMode(m);
-    try {
-      localStorage.setItem('music-nebula.bg-cover-mode', m);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
+  /** 组合层接线：壁纸应用结果 → useBackground 设背景 + 关闭壁纸窗口。 */
   const handleWallpaperApply = useCallback(
     (_item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => {
-      if (!('url' in result) || !('type' in result)) {
-        setWallpaperOpen(false);
-        return;
-      }
-      setBgSetting({ type: result.type, url: result.url });
-      setWallpaperOpen(false);
+      applyWallpaperResult(result);
+      closeWallpaper();
     },
-    [],
+    [applyWallpaperResult, closeWallpaper],
   );
-
-  const handleBgFile = useCallback((file: File) => {
-    if (file.type.startsWith('video/')) {
-      setBgSetting({ type: 'video', url: URL.createObjectURL(file) });
-      return;
-    }
-    if (file.size <= 2.5 * 1024 * 1024) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const url = String(reader.result);
-        setBgSetting({ type: 'image', url });
-        saveBackground({ type: 'image', url });
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setBgSetting({ type: 'image', url: URL.createObjectURL(file) });
-    }
-  }, []);
 
   /** 组合层接线：账号域 requestLogin + 边缘面板 showPanel。 */
   const handleGoLogin = useCallback(

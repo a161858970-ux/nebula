@@ -3,7 +3,9 @@ import { BACKGROUND_PRESETS } from '../lib/backgrounds';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import { Starfield } from './Starfield';
 
-export type CoverBgMode = 'fill' | 'frosted' | 'color' | 'palette' | 'blend' | 'prism';
+import type { CoverBgMode } from '../lib/backgrounds';
+
+export type { CoverBgMode };
 
 export function BackgroundLayer({
   setting,

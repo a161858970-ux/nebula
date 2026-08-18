@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 6 步：useBackground（VisualAtmosphere 中间层）+ useInterfaceSettings
+
+**改动**
+
+- 新增 `src/lib/atmosphere.ts`：`VisualAtmosphere` 中间层类型（palette/sample），useBackground 只产出数据、不直接修改歌词/玻璃。
+- 新增 `src/hooks/background/useBackground.ts`：拥有 bgSetting/bgCoverMode、壁纸应用订阅、环境光 CSS 变量（背景自有输出）与歌词色板采样（产出 atmosphere）；`CoverBgMode` 类型下沉 `lib/backgrounds.ts`。
+- 新增 `src/hooks/interfaceSettings/useInterfaceSettings.ts`：沉浸开关（隐藏卡片/歌词层）+ 持久化。
+- App：移除 bgSetting/bgCoverMode/uiHide* 四个状态、5 个 handler、三个采样/订阅 effect；新增「歌词配色桥」组合层 effect（从 atmosphere + custom 设置推导歌词 CSS 变量），行为等价。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿。
+
 ## 2026-08-18 — 架构收敛第 5 步：useLyrics
 
 **改动**
