@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 7 步：useSearchCluster + useEdgePanels
+
+**改动**
+
+- 新增 `src/hooks/searchCluster/useSearchCluster.ts`：searchMatches + 聚簇定位 handlers；经组合层接收 stage refs（controllerRef/effectiveCardsRef/metricsRef），不依赖 usePlaylist。
+- 新增 `src/hooks/edgePanels/useEdgePanels.ts`：edge 状态、热点触发、移出防抖、onMove 监听；经组合层接收 contextMenuRef（右键菜单打开时暂停隐藏）。
+- App：移除 searchMatches 状态、applySearch/3 个搜索 handler、edge 状态/4 个 handler/onMove effect 与稳定回调；布局 refs 提前声明（null! 早期声明），搜索 hook 在其后调用，memo 保持依赖 searchMatches。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（含搜索/边缘面板链路）。
+
 ## 2026-08-18 — 架构收敛第 6 步：useBackground（VisualAtmosphere 中间层）+ useInterfaceSettings
 
 **改动**

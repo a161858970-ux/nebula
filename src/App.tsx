@@ -13,7 +13,16 @@ import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
 import { useAudioPlayer } from './lib/audio/useAudioPlayer';
-import { CARD_HEIGHT, CARD_WIDTH, SEED, cardScreenPos, computeTileSize, generateCards } from './lib/layout';
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  SEED,
+  cardScreenPos,
+  computeTileSize,
+  generateCards,
+  type CardSpec,
+  type LayoutMetrics,
+} from './lib/layout';
 import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from './lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
 import type { BackgroundSetting } from './lib/backgrounds';
@@ -29,7 +38,7 @@ import { initGlassGlow, registerProximity, unregisterProximity } from './lib/gla
 import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
-import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from './lib/search';
+import { buildClusterPositions, matchSongs, panForCentering } from './lib/search';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { useAccounts } from './hooks/accounts/useAccounts';
@@ -40,17 +49,14 @@ import { useOverlays } from './hooks/overlays/useOverlays';
 import { useLyrics } from './hooks/lyrics/useLyrics';
 import { useBackground } from './hooks/background/useBackground';
 import { useInterfaceSettings } from './hooks/interfaceSettings/useInterfaceSettings';
+import { useEdgePanels } from './hooks/edgePanels/useEdgePanels';
+import { useSearchCluster } from './hooks/searchCluster/useSearchCluster';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
 const CARD_COUNT = 1000;
 /** 视口外挂载缓冲。 */
 const CULL_BUFFER = 300;
-/** 边缘感应热点宽度。 */
-const EDGE_HOTSPOT = 16;
-/** 移出面板后的收起延迟（防抖）。 */
-const EDGE_HIDE_DELAY = 300;
-
 declare global {
   interface Window {
     __nebula?: {
@@ -77,8 +83,6 @@ function preferredQuality(): string {
   }
 }
 
-type EdgeKey = 'top' | 'right' | 'left';
-
 export default function App() {
   const isWallpaperView =
     typeof window !== 'undefined' &&
@@ -96,7 +100,6 @@ export default function App() {
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(new Set());
   const [likedIds, setLikedIds] = useState<ReadonlySet<number>>(new Set());
   const [importing, setImporting] = useState(false);
-  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
 
   // ---------- 多平台账号状态（领域 hook：useAccounts） ----------
   const {
@@ -171,10 +174,9 @@ export default function App() {
     toggleTranslation,
   } = lyrics;
 
-  // ---------- 边缘感应面板 ----------
-  const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
-  const edgeHoverRef = useRef<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
-  const edgeTimerRef = useRef<Record<EdgeKey, number>>({ top: 0, right: 0, left: 0 });
+  // ---------- 边缘感应面板（useEdgePanels） ----------
+  const edgePanels = useEdgePanels({ contextMenuRef });
+  const { edge, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft } = edgePanels;
 
   const playerState = useAudioPlayer();
 
@@ -196,8 +198,24 @@ export default function App() {
   const interfaceSettings = useInterfaceSettings();
   const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics } = interfaceSettings;
 
+  // ---------- 搜索聚簇（useSearchCluster；stage refs 先声明，值在 memo 后填充） ----------
+  const stageRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<PanController | null>(null);
+  // 值在 memo 后填充；null! 仅为早期声明（运行时 action 时已赋值）
+  const metricsRef = useRef<LayoutMetrics>(null!);
+  const effectiveCardsRef = useRef<CardSpec[]>(null!);
+  const searchCluster = useSearchCluster({ controllerRef, effectiveCardsRef, metricsRef });
+  const {
+    searchMatches,
+    applySearch,
+    handleSearchPick,
+    handleSearchAll,
+    handleSearchQueryChange,
+  } = searchCluster;
+
   const cards = useMemo(() => generateCards(mulberry32(SEED), songs), [songs]);
   const metrics = useMemo(() => computeTileSize(songs.length), [songs.length]);
+  metricsRef.current = metrics;
   const clusterPositions = useMemo(
     () =>
       buildClusterPositions(
@@ -218,23 +236,16 @@ export default function App() {
         : cards,
     [cards, clusterPositions],
   );
+  effectiveCardsRef.current = effectiveCards;
   const spatial = useMemo(() => buildSpatialIndex(effectiveCards, metrics), [effectiveCards, metrics]);
 
-  const stageRef = useRef<HTMLDivElement>(null);
   const cardEls = useRef(new Map<number, HTMLElement>());
-  const controllerRef = useRef<PanController | null>(null);
   const visibleRef = useRef(new Set<number>());
   const revealedRef = useRef(revealedCount);
   const songsRef = useRef(songs);
   songsRef.current = songs;
-  const searchMatchesRef = useRef(searchMatches);
-  searchMatchesRef.current = searchMatches;
-  const effectiveCardsRef = useRef(effectiveCards);
-  effectiveCardsRef.current = effectiveCards;
   const spatialRef = useRef(spatial);
   spatialRef.current = spatial;
-  const metricsRef = useRef(metrics);
-  metricsRef.current = metrics;
   const revealTimerRef = useRef<number | null>(null);
   const spawnFromCenterRef = useRef<Set<number> | null>(null);
   const lastFailedSongRef = useRef<number | null>(null);
@@ -383,41 +394,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metrics, handleFrame, songs.length]);
 
-  /** 供 __nebula.search 与 SearchBar 共用：重排簇团 + 视角定位。 */
-  const applySearch = useCallback((matches: SearchMatch[], focusIndex: number | null) => {
-    setSearchMatches(matches);
-    const controller = controllerRef.current;
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-    const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-    if (!controller) return;
-    const cluster = buildClusterPositions(
-      effectiveCardsRef.current,
-      matches.map((m) => m.index),
-      metricsRef.current,
-    );
-    const focus = focusIndex != null ? cluster.get(focusIndex) ?? effectiveCardsRef.current[focusIndex] : null;
-    if (!focus) return;
-    controller.animateTo(panForCentering({ x: focus.x, y: focus.y }, vw, vh, controller.zoom));
-  }, []);
-
-  const handleSearchPick = useCallback(
-    (match: SearchMatch) => {
-      applySearch(searchMatchesRef.current.length ? searchMatchesRef.current : [match], match.index);
-    },
-    [applySearch],
-  );
-
-  const handleSearchAll = useCallback(
-    (matches: SearchMatch[]) => {
-      applySearch(matches, matches[0]?.index ?? null);
-    },
-    [applySearch],
-  );
-
-  const handleSearchQueryChange = useCallback((matches: SearchMatch[]) => {
-    setSearchMatches(matches);
-  }, []);
-
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
   const handlePlayNetworkSong = useCallback((track: Track) => {
     audioPlayer.playTransient(track);
@@ -444,72 +420,6 @@ export default function App() {
   );
 
   useEffect(() => initGlassGlow(), []);
-
-  // ---------- 边缘感应：热点触发 + 移出防抖 ----------
-  const showPanel = useCallback((k: EdgeKey) => {
-    if (edgeTimerRef.current[k]) {
-      window.clearTimeout(edgeTimerRef.current[k]);
-      edgeTimerRef.current[k] = 0;
-    }
-    setEdge((prev) => (prev[k] ? prev : { ...prev, [k]: true }));
-  }, []);
-
-  const scheduleHidePanel = useCallback((k: EdgeKey) => {
-    if (contextMenuRef.current) return;
-    // 搜索框聚焦期间不收回顶部面板（输入法弹出/打字）
-    if (k === 'top') {
-      const active = document.activeElement as HTMLElement | null;
-      if (active?.closest?.('.topbar')) return;
-    }
-    if (edgeHoverRef.current[k] || edgeTimerRef.current[k]) return;
-    edgeTimerRef.current[k] = window.setTimeout(() => {
-      edgeTimerRef.current[k] = 0;
-      setEdge((prev) => (prev[k] ? { ...prev, [k]: false } : prev));
-    }, EDGE_HIDE_DELAY);
-  }, []);
-
-  const enterPanel = useCallback(
-    (k: EdgeKey) => {
-      edgeHoverRef.current[k] = true;
-      showPanel(k);
-    },
-    [showPanel],
-  );
-
-  const leavePanel = useCallback(
-    (k: EdgeKey) => {
-      edgeHoverRef.current[k] = false;
-      scheduleHidePanel(k);
-    },
-    [scheduleHidePanel],
-  );
-
-  // 稳定回调（供 memo 化的 HUD 区块使用，避免内联箭头破坏 memo）
-  const enterTop = useCallback(() => enterPanel('top'), [enterPanel]);
-  const leaveTop = useCallback(() => leavePanel('top'), [leavePanel]);
-  const enterRight = useCallback(() => enterPanel('right'), [enterPanel]);
-  const leaveRight = useCallback(() => leavePanel('right'), [leavePanel]);
-  const enterLeft = useCallback(() => enterPanel('left'), [enterPanel]);
-  const leaveLeft = useCallback(() => leavePanel('left'), [leavePanel]);
-
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      if (contextMenuRef.current) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest('.edge-panel') || t?.closest('.dock')) return;
-      const x = e.clientX;
-      const y = e.clientY;
-      if (y <= EDGE_HOTSPOT) showPanel('top');
-      else scheduleHidePanel('top');
-      if (x >= window.innerWidth - EDGE_HOTSPOT) showPanel('right');
-      else scheduleHidePanel('right');
-      if (x <= EDGE_HOTSPOT) showPanel('left');
-      else scheduleHidePanel('left');
-    };
-    document.addEventListener('pointermove', onMove);
-    return () => document.removeEventListener('pointermove', onMove);
-  }, [showPanel, scheduleHidePanel]);
 
   // 歌词配色桥（App 组合层）：从 VisualAtmosphere 推导歌词/封面 CSS 变量。
   // useBackground 只产出 atmosphere，这里负责"氛围 → 歌词渲染变量"的落地。
