@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 5 步：useLyrics
+
+**改动**
+
+- 新增 `src/hooks/lyrics/useLyrics.ts`：歌词运行态（lyricLines 拉取/归一化，低频订阅 audioPlayer 随切歌触发）+ 设置（lyricSettings 持久化 + 全部 handler）+ 翻译开关（更名 `lyricTranslationEnabled`）。
+- `src/lib/lyricSettings.ts`：`LyricVisualSettings` 共享类型下沉，LyricsLayer 改为从 lib 取（hooks 不 import 组件）。
+- App：lyricLines/lyricSettings/lyricTranslate 三个状态、歌词拉取 effect、翻译开关与 9 个歌词设置 handler、normalizeLyricLines 全部迁出；JSX 改用 hook 返回值。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿。
+
 ## 2026-08-18 — 架构收敛第 4 步：OverlayStack 抽取 + HUD memo 化
 
 **改动**

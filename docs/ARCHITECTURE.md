@@ -90,7 +90,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 2. `LibraryService` + `useLibrary` + `usePlaylist` + `usePlaylistImport`（含 `lib/playlistTypes.ts` 共享类型；会话记忆效果暂留 App，随 Stage 步迁移）
 - [x] 3. `useOverlays`
 - [x] 4. 视图第一阶段（OverlayStack 抽取 + HUD/BottomBar memo 化 + 稳定回调接线）
-- [ ] 5. `useLyrics`
+- [x] 5. `useLyrics`（含 `lib/lyricSettings.ts` 共享类型；翻译开关更名 lyricTranslationEnabled）
 - [ ] 6. `useBackground`（含 VisualAtmosphere 中间层迁移）
 - [ ] 7. `useSearchCluster` + `useEdgePanels`
 - [ ] 8. 视图第二阶段（LyricsOverlay / StageCanvas 接线）

@@ -4,7 +4,7 @@ import type { CoverBgMode } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
 import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
-import { LyricsLayer, type FrameBus, type LyricVisualSettings } from './components/LyricsLayer';
+import { LyricsLayer, type FrameBus } from './components/LyricsLayer';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
@@ -32,7 +32,6 @@ import {
   type LyricPalette,
 } from './lib/coverColors';
 import { initGlassGlow, registerProximity, unregisterProximity } from './lib/glassGlow';
-import { filterCreditLines, mergeWordLyrics, type LyricLineUI } from './lib/lyrics';
 import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
@@ -44,6 +43,7 @@ import { useLibrary } from './hooks/library/useLibrary';
 import { usePlaylist } from './hooks/playlist/usePlaylist';
 import { usePlaylistImport, type ImportCommit } from './hooks/playlistImport/usePlaylistImport';
 import { useOverlays } from './hooks/overlays/useOverlays';
+import { useLyrics } from './hooks/lyrics/useLyrics';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -90,30 +90,6 @@ function loadUiBool(key: string): boolean {
   }
 }
 
-/** 后端歌词结果（unknown）防御性归一化。 */
-function normalizeLyricLines(data: unknown, title?: string, artist?: string): LyricLineUI[] {
-  if (!data || typeof data !== 'object') return [];
-  const lines = (data as { lines?: unknown }).lines;
-  if (!Array.isArray(lines)) return [];
-  const out: LyricLineUI[] = [];
-  for (const raw of lines) {
-    if (!raw || typeof raw !== 'object') continue;
-    const r = raw as { timeMs?: unknown; text?: unknown; translation?: unknown };
-    if (typeof r.timeMs !== 'number' || typeof r.text !== 'string') continue;
-    out.push({
-      timeMs: r.timeMs,
-      text: r.text,
-      translation: typeof r.translation === 'string' && r.translation ? r.translation : undefined,
-    });
-  }
-  if (!out.length) return out;
-  // 逐字歌词：yrc 优先，QQ 的 qrc 直接映射进 yrc 统一解析
-  const src = data as { yrc?: unknown; qrc?: unknown };
-  const yrc = typeof src.yrc === 'string' ? src.yrc : '';
-  const qrc = typeof src.qrc === 'string' ? src.qrc : '';
-  return filterCreditLines(mergeWordLyrics(out, yrc || qrc), title, artist);
-}
-
 type EdgeKey = 'top' | 'right' | 'left';
 
 export default function App() {
@@ -135,50 +111,6 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
-  const [lyricTranslate, setLyricTranslate] = useState(
-    () => typeof localStorage === 'undefined' || localStorage.getItem('music-nebula.lyric-translate') !== '0',
-  );
-  const [lyricSettings, setLyricSettings] = useState<LyricVisualSettings>(() => {
-    const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
-    let fontSize = 24;
-    let highlightStyle: LyricVisualSettings['highlightStyle'] = 'sweep';
-    let layerMode: LyricVisualSettings['layerMode'] = 'under';
-    let currentScale = 1.22;
-    let wordRise = 4;
-    let lyricLayout: LyricVisualSettings['lyricLayout'] = 'stacked';
-    let lyricColorSource: LyricVisualSettings['lyricColorSource'] = 'cover';
-    let customColor = '#3aa0ff';
-    let bold = false;
-    try {
-      const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
-      if (s) {
-        const p = JSON.parse(s) as Partial<LyricVisualSettings>;
-        if (typeof p.fontSize === 'number' && p.fontSize >= 14 && p.fontSize <= maxFont) fontSize = p.fontSize;
-        if (p.highlightStyle === 'sweep' || p.highlightStyle === 'float') highlightStyle = p.highlightStyle;
-        if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
-        if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
-        if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
-        if (p.lyricLayout === 'stacked' || p.lyricLayout === 'offset') lyricLayout = p.lyricLayout;
-        if (p.lyricColorSource === 'cover' || p.lyricColorSource === 'custom') lyricColorSource = p.lyricColorSource;
-        if (typeof p.customColor === 'string' && /^#?[0-9a-f]{6}$/i.test(p.customColor)) customColor = p.customColor;
-        if (p.bold === true) bold = true;
-      }
-    } catch {
-      /* 用默认值 */
-    }
-    return {
-      fontSize,
-      highlightStyle,
-      layerMode,
-      currentScale,
-      wordRise,
-      lyricLayout,
-      lyricColorSource,
-      customColor,
-      bold,
-    };
-  });
-  const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
   const [uiHideCards, setUiHideCards] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-cards'));
   const [uiHideLyrics, setUiHideLyrics] = useState<boolean>(() => loadUiBool('music-nebula.ui-hide-lyrics'));
   const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
@@ -232,6 +164,23 @@ export default function App() {
     setModeToast,
     setInfoModal,
   } = overlays;
+  // ---------- 歌词领域（useLyrics） ----------
+  const lyrics = useLyrics();
+  const {
+    lyricLines,
+    lyricSettings,
+    lyricTranslationEnabled,
+    handleLyricFontSize,
+    handleHighlightStyle,
+    handleLayerMode,
+    handleCurrentScale,
+    handleWordRise,
+    handleLyricLayout,
+    handleLyricColorSource,
+    handleCustomColor,
+    handleLyricBold,
+    toggleTranslation,
+  } = lyrics;
 
   // ---------- 边缘感应面板 ----------
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
@@ -666,34 +615,6 @@ export default function App() {
     return off;
   }, [isWallpaperView]);
 
-  // 歌词加载：随当前歌曲变化拉取
-  useEffect(() => {
-    const song = playerState.song;
-    if (!song) {
-      setLyricLines([]);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      if (!hasDesktopAPI() || !song.sourceId) {
-        setLyricLines([]);
-        return;
-      }
-      try {
-        const res = await window.nebulaAPI!.fetchLyric(toBackendTrack(song));
-        if (cancelled) return;
-        const lines = normalizeLyricLines(res.ok ? res.data : null, song.title, song.artist);
-        setLyricLines(lines);
-      } catch {
-        if (!cancelled) setLyricLines([]);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [playerState.song?.id, playerState.song?.sourceId]);
-
   // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
   useEffect(() => {
     try {
@@ -948,63 +869,6 @@ export default function App() {
     saveBackground(s);
   }, []);
 
-  const handleToggleTranslate = useCallback(() => {
-    setLyricTranslate((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem('music-nebula.lyric-translate', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
-
-  const persistLyricSettings = useCallback((next: LyricVisualSettings) => {
-    setLyricSettings(next);
-    try {
-      localStorage.setItem('music-nebula.lyric-settings', JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const handleLyricFontSize = useCallback(
-    (n: number) => persistLyricSettings({ ...lyricSettings, fontSize: n }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleHighlightStyle = useCallback(
-    (s: LyricVisualSettings['highlightStyle']) => persistLyricSettings({ ...lyricSettings, highlightStyle: s }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleLayerMode = useCallback(
-    (m: LyricVisualSettings['layerMode']) => persistLyricSettings({ ...lyricSettings, layerMode: m }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleCurrentScale = useCallback(
-    (n: number) => persistLyricSettings({ ...lyricSettings, currentScale: n }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleWordRise = useCallback(
-    (n: number) => persistLyricSettings({ ...lyricSettings, wordRise: n }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleLyricLayout = useCallback(
-    (m: LyricVisualSettings['lyricLayout']) => persistLyricSettings({ ...lyricSettings, lyricLayout: m }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleLyricColorSource = useCallback(
-    (s: LyricVisualSettings['lyricColorSource']) => persistLyricSettings({ ...lyricSettings, lyricColorSource: s }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleCustomColor = useCallback(
-    (c: string) => persistLyricSettings({ ...lyricSettings, customColor: c }),
-    [lyricSettings, persistLyricSettings],
-  );
-  const handleLyricBold = useCallback(
-    (b: boolean) => persistLyricSettings({ ...lyricSettings, bold: b }),
-    [lyricSettings, persistLyricSettings],
-  );
   const toggleHideCards = useCallback(() => {
     setUiHideCards((v) => {
       const next = !v;
@@ -1230,11 +1094,11 @@ export default function App() {
       </button>
 
       <BottomBar
-        translateOn={lyricTranslate}
+        translateOn={lyricTranslationEnabled}
         qualities={playerState.qualities}
         quality={playerState.quality || preferredQuality()}
         mode={playerState.mode}
-        onToggleTranslate={handleToggleTranslate}
+        onToggleTranslate={toggleTranslation}
         onSelectQuality={handleQualitySelect}
         onCycleMode={cycleModeWithToast}
         onOpenNowPlaying={openNowPlaying}
@@ -1252,7 +1116,7 @@ export default function App() {
         duration={playerState.duration}
         liked={liked}
         lines={lyricLines}
-        translateOn={lyricTranslate}
+        translateOn={lyricTranslationEnabled}
         wallpaperOpen={wallpaperOpen}
         infoModal={infoModal}
         modeToast={modeToast}
@@ -1262,7 +1126,7 @@ export default function App() {
         onPrev={playPrev}
         onNext={playNext}
         onToggleLike={handleToggleLike}
-        onToggleTranslate={handleToggleTranslate}
+        onToggleTranslate={toggleTranslation}
         onSeek={seekTo}
         onCloseWallpaper={closeWallpaper}
         onApplyWallpaper={handleWallpaperApply}
