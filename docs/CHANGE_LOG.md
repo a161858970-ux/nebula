@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 9 步收尾：StageCanvas 区块化
+
+**改动**
+
+- 新增 `src/components/StageCanvas.tsx`（Z2 区块）：stage-3d + 卡片虚拟化渲染收纯 props（memo 化），同层区块互不依赖。
+- App.tsx：597 → 587 行，stage-3d JSX 收敛为 `<StageCanvas />` 组合接线。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（虚拟化 / 拖拽 / 悬浮 / 导入链路不变）。
+
 ## 2026-08-18 — 架构收敛第 9 步：useStage（舞台领域收尾）
 
 **改动**

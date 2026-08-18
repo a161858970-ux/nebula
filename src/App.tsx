@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
-import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer } from './components/LyricsLayer';
+import { StageCanvas } from './components/StageCanvas';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
@@ -13,7 +13,6 @@ import { audioPlayer } from './lib/audio/AudioPlayer';
 import type { PanController } from './lib/panEngine';
 import { SEED, type CardSpec, type LayoutMetrics } from './lib/layout';
 import type { BackgroundSetting } from './lib/backgrounds';
-import { CULL_BUFFER } from './lib/stage';
 import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
@@ -461,32 +460,23 @@ export default function App() {
         />
       )}
 
-      <div
-        ref={stageRef}
-        className={`stage-3d${importing ? ' is-importing' : ''}${uiHideCards ? ' is-cards-hidden' : ''}`}
-      >
-        {visibleIds.map((id) => {
-          const card = effectiveCards[id]!;
-          if (!card) return null;
-          return (
-            <MusicCard
-              key={card.id}
-              card={card}
-              metrics={metrics}
-              buffer={CULL_BUFFER}
-              pan={panRef.current}
-              zoom={frameBusRef.current.zoom}
-              hovered={card.id === hoveredId}
-              isCurrent={card.track.id === currentSongId}
-              isFailed={failedIds.has(card.track.id)}
-              onPlay={handleCardPlay}
-              onContextMenu={openContextMenu}
-              onHoverChange={handleHoverChange}
-              registerEl={registerEl}
-            />
-          );
-        })}
-      </div>
+      <StageCanvas
+        stageRef={stageRef}
+        importing={importing}
+        uiHideCards={uiHideCards}
+        visibleIds={visibleIds}
+        effectiveCards={effectiveCards}
+        metrics={metrics}
+        pan={panRef.current}
+        zoom={frameBusRef.current.zoom}
+        hoveredId={hoveredId}
+        currentSongId={currentSongId}
+        failedIds={failedIds}
+        onPlay={handleCardPlay}
+        onContextMenu={openContextMenu}
+        onHoverChange={handleHoverChange}
+        registerEl={registerEl}
+      />
 
       <TopBar
         visible={edge.top}
