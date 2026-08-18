@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 2 步：LibraryService + useLibrary + usePlaylist + usePlaylistImport
+
+**改动**
+
+- 新增 `src/lib/library.ts`（LibraryService 单例：仅 track/catalog 数据，不持有 currentPlaylist；`applyImported` 唯一导入入口）+ `src/hooks/library/useLibrary.ts`（纯订阅适配层）。
+- 新增 `src/hooks/playlist/usePlaylist.ts`（当前歌单身份 + 队列播放入口）与 `src/hooks/playlistImport/usePlaylistImport.ts`（手动/平台/本地三入口，只负责解析与状态）。
+- `src/lib/playlistTypes.ts`：`ImportStatus` / `PlaylistMeta` 共享类型下沉，ImportBar 改为从 lib 取类型（满足 hooks 不得 import 组件、hooks 不得跨领域 import）。
+- App：songs/currentPlaylist/importStatus/importMessage/localBusy 状态移除；曲库初始化用演示数据填充 LibraryService；导入走组合层接线（sessionStartRef/commitRef 打破 TDZ）；beginImport 改经 library.applyImported + importer.complete；会话记忆效果暂留 App（随 Stage 步迁移）。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（含演示导入、本地导入、播放链路零回归）。
+
 ## 2026-08-18 — 架构收敛第 1 步：ARCHITECTURE.md + check-arch + useAccounts
 
 **改动**

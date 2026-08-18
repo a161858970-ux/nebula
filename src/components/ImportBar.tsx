@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import type { ImportStatus } from '../lib/playlistTypes';
 
-export type ImportStatus = 'idle' | 'parsing' | 'done' | 'warn' | 'error';
+export type { ImportStatus };
 
 interface ImportBarProps {
   status: ImportStatus;

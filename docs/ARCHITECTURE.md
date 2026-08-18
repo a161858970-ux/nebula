@@ -86,13 +86,12 @@ view blocks（同层互不依赖，组合只由 App 完成）
 
 ## 7. 迁移路线（插花式，每步 build + qa + 提交）
 
-1. `useAccounts`
-2. `LibraryService` + `useLibrary` + `usePlaylist` + `usePlaylistImport`
-3. `useOverlays`
-4. 视图第一阶段（HUD / OverlayStack 接线，App 开始瘦身）
-5. `useLyrics`
-6. `useBackground`（含 VisualAtmosphere 中间层迁移）
-7. `useSearchCluster` + `useEdgePanels`
-8. 视图第二阶段（LyricsOverlay / StageCanvas 接线）
-9. `useStage`（最后，最高风险）
-
+- [x] 1. `useAccounts`
+- [x] 2. `LibraryService` + `useLibrary` + `usePlaylist` + `usePlaylistImport`（含 `lib/playlistTypes.ts` 共享类型；会话记忆效果暂留 App，随 Stage 步迁移）
+- [ ] 3. `useOverlays`
+- [ ] 4. 视图第一阶段（HUD / OverlayStack 接线，App 开始瘦身）
+- [ ] 5. `useLyrics`
+- [ ] 6. `useBackground`（含 VisualAtmosphere 中间层迁移）
+- [ ] 7. `useSearchCluster` + `useEdgePanels`
+- [ ] 8. 视图第二阶段（LyricsOverlay / StageCanvas 接线）
+- [ ] 9. `useStage`（最后，最高风险）

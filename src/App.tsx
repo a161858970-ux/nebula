@@ -15,8 +15,6 @@ import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
 import { useAudioPlayer } from './lib/audio/useAudioPlayer';
-import { resolvePlaylist } from './lib/playlist/adapters';
-import type { ImportStatus } from './components/ImportBar';
 import { CARD_HEIGHT, CARD_WIDTH, SEED, cardScreenPos, computeTileSize, generateCards } from './lib/layout';
 import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from './lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
@@ -43,6 +41,10 @@ import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } 
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { useAccounts } from './hooks/accounts/useAccounts';
+import { useLibrary } from './hooks/library/useLibrary';
+import { usePlaylist } from './hooks/playlist/usePlaylist';
+import { usePlaylistImport, type ImportCommit } from './hooks/playlistImport/usePlaylistImport';
+import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
 const CARD_COUNT = 1000;
@@ -120,12 +122,16 @@ export default function App() {
     new URLSearchParams(window.location.search).get('view') === 'wallpaper';
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [visibleIds, setVisibleIds] = useState<number[]>([]);
-  const [songs, setSongs] = useState<Track[]>(() => generateTracks(mulberry32(SEED), CARD_COUNT));
+  // 曲库初始化：首次挂载用演示数据填充 LibraryService（后续由导入/会话恢复接管）
+  useState(() => {
+    if (libraryService.getState().songs.length === 0) {
+      libraryService.applyImported(generateTracks(mulberry32(SEED), CARD_COUNT));
+    }
+  });
+  const { songs } = useLibrary();
   const [revealedCount, setRevealedCount] = useState(() => songs.length);
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(new Set());
   const [likedIds, setLikedIds] = useState<ReadonlySet<number>>(new Set());
-  const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
-  const [importMessage, setImportMessage] = useState('');
   const [importing, setImporting] = useState(false);
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
@@ -195,14 +201,17 @@ export default function App() {
     setDrawerPlatform,
     requestLogin,
   } = useAccounts();
-  const [localBusy, setLocalBusy] = useState(false);
+  // ---------- 歌单/导入领域（组合层接线） ----------
+  const playlist = usePlaylist();
+  // 转发 ref：打破 TDZ，保持 hook 调用顺序稳定（resetImportState / beginImport 在其后定义）
+  const sessionStartRef = useRef<() => void>(() => {});
+  const commitRef = useRef<(c: ImportCommit) => void>(() => {});
+  const importer = usePlaylistImport({
+    onSessionStart: () => sessionStartRef.current(),
+    onImported: (c) => commitRef.current(c),
+  });
+  const { complete: completeImport } = importer;
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
-  const [currentPlaylist, setCurrentPlaylist] = useState<{
-    platform: string;
-    id: string;
-    name: string;
-    cover: string;
-  } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null);
   const contextMenuRef = useRef(contextMenu);
   contextMenuRef.current = contextMenu;
@@ -389,7 +398,9 @@ export default function App() {
       player: audioPlayer,
       songsData: () => songsRef.current,
       setSongAudio: (id: number, url: string) => {
-        setSongs((prev) => prev.map((s, i) => (i === id ? { ...s, audio: url } : s)));
+        libraryService.applyImported(
+          songsRef.current.map((s, i) => (i === id ? { ...s, audio: url } : s)),
+        );
       },
       search: (q: string) => {
         const m = matchSongs(q, songsRef.current);
@@ -676,7 +687,7 @@ export default function App() {
       const s = JSON.parse(raw) as { tracks?: DesktopTrack[]; currentId?: number };
       if (!s.tracks?.length) return;
       const restored = s.tracks.map((t, i) => toFrontendTrack(t, i));
-      setSongs(restored);
+      libraryService.restoreSongs(restored);
       setRevealedCount(restored.length);
       revealedRef.current = restored.length;
       visibleRef.current = new Set();
@@ -741,26 +752,22 @@ export default function App() {
     (adapterName: string, songs: Track[], simulated = false, note?: string) => {
       visibleRef.current = new Set();
       setVisibleIds([]);
-      setSongs(songs);
+      libraryService.applyImported(songs);
       setImporting(true);
       spawnFromCenterRef.current = new Set(songs.map((_, i) => i));
       startProgressiveReveal(songs.length, () => {
         setImporting(false);
         spawnFromCenterRef.current = null;
-        setImportStatus(simulated ? 'warn' : 'done');
-        setImportMessage(
-          simulated
-            ? `已导入 ${songs.length} 首（模拟）${note ?? ''}`
-            : `已导入 ${songs.length} 首（${adapterName}）`,
+        completeImport(
+          simulated ? 'warn' : 'done',
+          simulated ? `已导入 ${songs.length} 首（模拟）${note ?? ''}` : `已导入 ${songs.length} 首（${adapterName}）`,
         );
       });
     },
-    [startProgressiveReveal],
+    [startProgressiveReveal, completeImport],
   );
 
   const resetImportState = useCallback(() => {
-    setImportStatus('parsing');
-    setImportMessage('');
     setHoveredId(null);
     audioPlayer.stop();
     setFailedIds(new Set());
@@ -768,62 +775,12 @@ export default function App() {
     setLikedIds(new Set());
   }, []);
 
-  const handleImport = useCallback(
-    async (url: string) => {
-      resetImportState();
-      try {
-        const { adapterName, songs, simulated, note } = await resolvePlaylist(url);
-        setCurrentPlaylist({ platform: adapterName, id: 'manual', name: '手动链接导入', cover: '' });
-        beginImport(adapterName, songs, simulated, note);
-      } catch (err) {
-        setImportStatus('error');
-        setImportMessage(`歌单解析失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [beginImport, resetImportState],
-  );
-
-  /** 登录面板“我的歌单”点击导入。 */
-  const handleImportByPlatform = useCallback(
-    async (platform: string, id: string) => {
-      if (!hasDesktopAPI()) return;
-      resetImportState();
-      try {
-        const res = await window.nebulaAPI!.importPlaylistId(platform, id);
-        if (!res.ok) throw new Error(res.error);
-        setCurrentPlaylist({ platform: res.data.platformName, id, name: res.data.name, cover: res.data.cover });
-        beginImport(res.data.platformName, res.data.tracks.map((t, i) => toFrontendTrack(t, i)));
-      } catch (err) {
-        setImportStatus('error');
-        setImportMessage(`歌单导入失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [beginImport, resetImportState],
-  );
-
-  /** 本地音乐：原生文件夹选择器 → 主进程解析 ID3 → 星云卡片。 */
-  const handleOpenLocal = useCallback(async () => {
-    if (!hasDesktopAPI()) return;
-    setLocalBusy(true);
-    try {
-      const res = await window.nebulaAPI!.openLocalDirectory();
-      if (res.ok && res.data?.tracks?.length) {
-        resetImportState();
-        beginImport('本地音乐', res.data.tracks.map((t, i) => toFrontendTrack(t, i)));
-      } else if (res.ok) {
-        setImportStatus('warn');
-        setImportMessage('所选文件夹未发现可导入的音频文件');
-      } else {
-        setImportStatus('error');
-        setImportMessage(res.error);
-      }
-    } catch (err) {
-      setImportStatus('error');
-      setImportMessage(`本地音乐导入失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setLocalBusy(false);
-    }
-  }, [beginImport, resetImportState]);
+  // 组合层接线：导入会话开始 → resetImportState；导入成功 → 曲库 + 歌单身份 + 渐进揭示
+  sessionStartRef.current = resetImportState;
+  commitRef.current = (c) => {
+    if (c.meta) playlist.setCurrent(c.meta);
+    beginImport(c.adapterName, c.tracks, c.simulated, c.note);
+  };
 
   const handleCardPlay = useCallback(async (songId: number) => {
     const song = songsRef.current[songId];
@@ -913,26 +870,20 @@ export default function App() {
   /** 歌单列表：双击播放某首 → 回到该歌曲卡片中心。 */
   const playSongFromList = useCallback(
     (index: number) => {
-      const song = songsRef.current[index];
-      if (!song) return;
-      audioPlayer.playSong(song, songsRef.current);
+      playlist.playFromList(index);
       setNowPlayingOpen(false);
       handleReset();
     },
-    [handleReset],
+    [playlist, handleReset],
   );
 
   const playPlaylistFromStart = useCallback(() => {
-    const list = songsRef.current;
-    if (!list.length) return;
-    audioPlayer.playSong(list[0]!, list);
+    playlist.playFromStart();
     setNowPlayingOpen(false);
     handleReset();
-  }, [handleReset]);
+  }, [playlist, handleReset]);
 
-  const insertNextSong = useCallback((track: Track) => {
-    audioPlayer.insertNext(track);
-  }, []);
+  const insertNextSong = useCallback((track: Track) => playlist.insertNext(track), [playlist]);
 
   const openContextMenu = useCallback((e: MouseEvent, track: Track) => {
     e.preventDefault();
@@ -1221,7 +1172,7 @@ export default function App() {
       <TopBar
         visible={edge.top}
         total={songs.length}
-        localBusy={localBusy}
+        localBusy={importer.localBusy}
         searchSlot={
           <SearchBar
             songs={songs}
@@ -1234,7 +1185,7 @@ export default function App() {
         }
         onEnter={() => enterPanel('top')}
         onLeave={() => leavePanel('top')}
-        onOpenLocal={handleOpenLocal}
+        onOpenLocal={importer.openLocal}
       />
 
       <AccountDock
@@ -1275,16 +1226,16 @@ export default function App() {
       <PlaylistDock
         visible={edge.left}
         accounts={accounts}
-        importStatus={importStatus}
-        importMessage={importMessage}
+        importStatus={importer.importStatus}
+        importMessage={importer.importMessage}
         onEnter={() => enterPanel('left')}
         onLeave={() => leavePanel('left')}
-        onImportPlaylist={handleImportByPlatform}
-        onImportUrl={handleImport}
+        onImportPlaylist={importer.importPlaylistId}
+        onImportUrl={importer.importUrl}
         onGoLogin={handleGoLogin}
         onRefreshAll={handleRefreshAll}
         songs={songs}
-        currentPlaylist={currentPlaylist}
+        currentPlaylist={playlist.currentPlaylist}
         onPlaySongFromList={playSongFromList}
         onPlayPlaylist={playPlaylistFromStart}
         onSongContextMenu={openContextMenu}
