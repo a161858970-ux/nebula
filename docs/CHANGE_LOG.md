@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 9 步：useStage（舞台领域收尾）
+
+**改动**
+
+- 新增 `src/hooks/stage/useStage.ts`：收敛 hoveredId / visibleIds / failedIds / likedIds / importing、卡片注册（registerEl + glassGlow）、悬浮态（右键菜单防抢占）、PanController 生命周期 + `__nebula` 调试口、虚拟化渲染数据（cards/metrics/effectiveCards/spatial）、渐进揭示（beginImport/resetImportState）、卡片点播、回到中心、喜欢切换、会话记忆恢复。
+- 新增 `src/lib/stage.ts`（FrameBus + CULL_BUFFER 下沉，LyricsLayer 改为从 lib 取类型）与 `src/lib/preferences.ts`（preferredQuality 下沉，App 与 useStage 共用）。
+- App.tsx：906 → 597 行；删除全部 stage 状态/refs/派生 memo/回调/effect，改为 `useStage({...})` 组合接线；searchCluster 与 useStage 共享 controllerRef/metricsRef/effectiveCardsRef（App 声明，useStage 渲染时写入）。
+- useStage 只依赖 lib（audioPlayer / LibraryService / 布局 / 空间索引 / 搜索 / 玻璃发光），不依赖其他 hook；高频播放状态经 `currentSongId` 参数注入，避免跨领域 import。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（虚拟化、拖拽、滚轮、渐进导入、卡片点播、失败置灰、音质菜单、本地导入全部通过）。
+
+**遗留与风险**
+
+- useStage 是大领域（Q6 确认后期可再拆：虚拟化 / 揭示 / 交互），目前保持单 hook 收敛。
+
 ## 2026-08-18 — 架构收敛第 8 步：三 Context 落地 + 区块化 + 叶子高频订阅
 
 **改动**

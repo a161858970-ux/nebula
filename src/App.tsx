@@ -3,35 +3,23 @@ import { BackgroundLayer } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
 import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
-import { LyricsLayer, type FrameBus } from './components/LyricsLayer';
+import { LyricsLayer } from './components/LyricsLayer';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
 import { WallpaperPicker } from './components/WallpaperPicker';
 import { OverlayStack } from './components/OverlayStack';
-import { PanController } from './lib/panEngine';
-import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
-import {
-  CARD_HEIGHT,
-  CARD_WIDTH,
-  SEED,
-  cardScreenPos,
-  computeTileSize,
-  generateCards,
-  type CardSpec,
-  type LayoutMetrics,
-} from './lib/layout';
-import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from './lib/fisheye';
-import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
+import type { PanController } from './lib/panEngine';
+import { SEED, type CardSpec, type LayoutMetrics } from './lib/layout';
 import type { BackgroundSetting } from './lib/backgrounds';
-import { initGlassGlow, registerProximity, unregisterProximity } from './lib/glassGlow';
+import { CULL_BUFFER } from './lib/stage';
 import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
-import { buildClusterPositions, matchSongs, panForCentering } from './lib/search';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
+import { preferredQuality } from './lib/preferences';
 import { useAccounts } from './hooks/accounts/useAccounts';
 import { useLibrary } from './hooks/library/useLibrary';
 import { usePlaylist } from './hooks/playlist/usePlaylist';
@@ -45,12 +33,11 @@ import { InterfaceSettingsProvider } from './hooks/interfaceSettings/InterfaceSe
 import { VisualAtmosphereProvider } from './hooks/background/VisualAtmosphereContext';
 import { useEdgePanels } from './hooks/edgePanels/useEdgePanels';
 import { useSearchCluster } from './hooks/searchCluster/useSearchCluster';
+import { useStage } from './hooks/stage/useStage';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
 const CARD_COUNT = 1000;
-/** 视口外挂载缓冲。 */
-const CULL_BUFFER = 300;
 declare global {
   interface Window {
     __nebula?: {
@@ -68,21 +55,10 @@ declare global {
   }
 }
 
-/** 读取用户上次选择的音质档位（localStorage）。 */
-function preferredQuality(): string {
-  try {
-    return localStorage.getItem('music-nebula.quality') ?? '';
-  } catch {
-    return '';
-  }
-}
-
 export default function App() {
   const isWallpaperView =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('view') === 'wallpaper';
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
-  const [visibleIds, setVisibleIds] = useState<number[]>([]);
   // 曲库初始化：首次挂载用演示数据填充 LibraryService（后续由导入/会话恢复接管）
   useState(() => {
     if (libraryService.getState().songs.length === 0) {
@@ -90,10 +66,6 @@ export default function App() {
     }
   });
   const { songs } = useLibrary();
-  const [revealedCount, setRevealedCount] = useState(() => songs.length);
-  const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(new Set());
-  const [likedIds, setLikedIds] = useState<ReadonlySet<number>>(new Set());
-  const [importing, setImporting] = useState(false);
 
   // ---------- 多平台账号状态（领域 hook：useAccounts） ----------
   const {
@@ -193,10 +165,9 @@ export default function App() {
   const interfaceSettings = useInterfaceSettings();
   const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics } = interfaceSettings;
 
-  // ---------- 搜索聚簇（useSearchCluster；stage refs 先声明，值在 memo 后填充） ----------
-  const stageRef = useRef<HTMLDivElement>(null);
+  // ---------- 搜索聚簇 + 舞台（useSearchCluster 先声明 refs，useStage 渲染时填充） ----------
   const controllerRef = useRef<PanController | null>(null);
-  // 值在 memo 后填充；null! 仅为早期声明（运行时 action 时已赋值）
+  // 值在 useStage 渲染时填充；null! 仅为早期声明（运行时 action 时已赋值）
   const metricsRef = useRef<LayoutMetrics>(null!);
   const effectiveCardsRef = useRef<CardSpec[]>(null!);
   const searchCluster = useSearchCluster({ controllerRef, effectiveCardsRef, metricsRef });
@@ -208,213 +179,43 @@ export default function App() {
     handleSearchQueryChange,
   } = searchCluster;
 
-  const cards = useMemo(() => generateCards(mulberry32(SEED), songs), [songs]);
-  const metrics = useMemo(() => computeTileSize(songs.length), [songs.length]);
-  metricsRef.current = metrics;
-  const clusterPositions = useMemo(
-    () =>
-      buildClusterPositions(
-        cards,
-        searchMatches.map((m) => m.index),
-        metrics,
-      ),
-    [cards, searchMatches, metrics],
-  );
-  /** 有效布局：命中卡片替换为簇团位置，其余保持原随机分布（形成“让位包围”）。 */
-  const effectiveCards = useMemo(
-    () =>
-      clusterPositions.size
-        ? cards.map((c, i) => {
-            const p = clusterPositions.get(i);
-            return p ? { ...c, x: p.x, y: p.y } : c;
-          })
-        : cards,
-    [cards, clusterPositions],
-  );
-  effectiveCardsRef.current = effectiveCards;
-  const spatial = useMemo(() => buildSpatialIndex(effectiveCards, metrics), [effectiveCards, metrics]);
-
-  const cardEls = useRef(new Map<number, HTMLElement>());
-  const visibleRef = useRef(new Set<number>());
-  const revealedRef = useRef(revealedCount);
-  const songsRef = useRef(songs);
-  songsRef.current = songs;
-  const spatialRef = useRef(spatial);
-  spatialRef.current = spatial;
-  const revealTimerRef = useRef<number | null>(null);
-  const spawnFromCenterRef = useRef<Set<number> | null>(null);
-  const lastFailedSongRef = useRef<number | null>(null);
-  const panRef = useRef({
-    x: (metrics.tileWidth - (typeof window !== 'undefined' ? window.innerWidth : 1280)) / 2,
-    y: (metrics.tileHeight - (typeof window !== 'undefined' ? window.innerHeight : 800)) / 2,
+  const currentSongId = playerState.song?.id ?? null;
+  const stage = useStage({
+    controllerRef,
+    songs,
+    searchMatches,
+    applySearch,
+    contextMenuRef,
+    completeImport,
+    currentSongId,
+    setNowPlayingOpen,
+    metricsRef,
+    effectiveCardsRef,
   });
-  const frameBusRef = useRef<FrameBus>({
-    x: panRef.current.x,
-    y: panRef.current.y,
-    zoom: 1,
-    vw: typeof window !== 'undefined' ? window.innerWidth : 1280,
-    vh: typeof window !== 'undefined' ? window.innerHeight : 800,
-  });
-
-  const registerEl = useCallback((id: number, el: HTMLElement | null) => {
-    if (el) {
-      cardEls.current.set(id, el);
-      registerProximity(el);
-    } else {
-      cardEls.current.delete(id);
-      unregisterProximity(el);
-    }
-  }, []);
-
-  const handleHoverChange = useCallback((id: number, hovered: boolean) => {
-    // 右键菜单打开时保留卡片悬浮态，避免菜单抢占指针导致卡片“收回”
-    if (!hovered && contextMenuRef.current) return;
-    setHoveredId(hovered ? id : null);
-  }, []);
-
-  const handleFrame = useCallback(
-    (frame: PanFrame) => {
-      panRef.current = { x: frame.x, y: frame.y };
-      frameBusRef.current.x = frame.x;
-      frameBusRef.current.y = frame.y;
-      frameBusRef.current.zoom = frame.zoom;
-      frameBusRef.current.vw = frame.vw;
-      frameBusRef.current.vh = frame.vh;
-      const cardsNow = effectiveCardsRef.current;
-      const spatialNow = spatialRef.current;
-      const metricsNow = metricsRef.current;
-      const ids = queryVisibleIds(cardsNow, spatialNow, frame, CULL_BUFFER, metricsNow).filter(
-        (id) => id < revealedRef.current,
-      );
-      const maxDist = Math.hypot(frame.vw, frame.vh) / 2;
-      const spawnSet = spawnFromCenterRef.current;
-
-      const cur = visibleRef.current;
-      let changed = ids.length !== cur.size;
-      if (!changed) {
-        for (const id of ids) {
-          if (!cur.has(id)) {
-            changed = true;
-            break;
-          }
-        }
-      }
-      if (changed) {
-        visibleRef.current = new Set(ids);
-        setVisibleIds(ids);
-      }
-
-      for (const id of ids) {
-        const el = cardEls.current.get(id);
-        if (!el) continue;
-        const card = cardsNow[id];
-        if (!card) continue;
-        const pos = cardScreenPos(
-          card,
-          panRef.current,
-          metricsNow.tileWidth,
-          metricsNow.tileHeight,
-          frame.vw,
-          frame.vh,
-          CULL_BUFFER,
-          frame.zoom,
-        );
-        if (!pos) {
-          el.classList.add('is-offscreen');
-          continue;
-        }
-        el.classList.remove('is-offscreen');
-        if (spawnSet?.has(id)) {
-          el.style.setProperty('--x', `${frame.vw / 2 - CARD_WIDTH / 2}px`);
-          el.style.setProperty('--y', `${frame.vh / 2 - CARD_HEIGHT / 2}px`);
-          el.style.setProperty('--scale', '0.9');
-          el.style.setProperty('--blur', '0px');
-          el.style.setProperty('--brightness', '1');
-          el.style.zIndex = '1';
-          spawnSet.delete(id);
-          continue;
-        }
-        el.style.setProperty('--x', `${pos.x}px`);
-        el.style.setProperty('--y', `${pos.y}px`);
-        el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(pos.dist, maxDist) * frame.zoom)));
-        el.style.setProperty('--blur', `${fisheyeBlur(pos.dist)}px`);
-        el.style.setProperty('--brightness', String(fisheyeBrightness(pos.dist)));
-        el.style.zIndex = String(fisheyeZIndex(pos.dist, maxDist));
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-
-    const controller = new PanController(stage, {
-      tileWidth: metrics.tileWidth,
-      tileHeight: metrics.tileHeight,
-      initialX: (metrics.tileWidth - window.innerWidth) / 2,
-      initialY: (metrics.tileHeight - window.innerHeight) / 2,
-      onFrame: handleFrame,
-      onPanStart: () => setHoveredId(null),
-    });
-    controllerRef.current = controller;
-    controller.start();
-
-    window.__nebula = {
-      reset: () => controller.reset(),
-      pan: () => ({ x: controller.pan.x, y: controller.pan.y }),
-      total: songs.length,
-      visible: () => cardEls.current.size,
-      revealed: () => revealedRef.current,
-      player: audioPlayer,
-      songsData: () => songsRef.current,
-      setSongAudio: (id: number, url: string) => {
-        libraryService.applyImported(
-          songsRef.current.map((s, i) => (i === id ? { ...s, audio: url } : s)),
-        );
-      },
-      search: (q: string) => {
-        const m = matchSongs(q, songsRef.current);
-        if (!m.length) return;
-        applySearch(m, m[0]!.index);
-      },
-      zoom: () => controllerRef.current?.zoom ?? 1,
-    };
-
-    return () => {
-      controller.dispose();
-      controllerRef.current = null;
-      window.__nebula = undefined;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metrics, handleFrame, songs.length]);
+  const {
+    stageRef,
+    frameBusRef,
+    panRef,
+    importing,
+    hoveredId,
+    visibleIds,
+    failedIds,
+    liked,
+    metrics,
+    effectiveCards,
+    registerEl,
+    handleHoverChange,
+    handleCardPlay,
+    handleReset,
+    handleToggleLike,
+    beginImport,
+    resetImportState,
+  } = stage;
 
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
   const handlePlayNetworkSong = useCallback((track: Track) => {
     audioPlayer.playTransient(track);
   }, []);
-
-  // 播放器失败事件 → 卡片置灰
-  useEffect(
-    () =>
-      audioPlayer.subscribe(() => {
-        const s = audioPlayer.getState();
-        if (s.failed && s.song && lastFailedSongRef.current !== s.song.id) {
-          lastFailedSongRef.current = s.song.id;
-          setFailedIds((prev) => (prev.has(s.song!.id) ? prev : new Set(prev).add(s.song!.id)));
-        }
-      }),
-    [],
-  );
-
-  useEffect(
-    () => () => {
-      if (revealTimerRef.current !== null) window.clearInterval(revealTimerRef.current);
-    },
-    [],
-  );
-
-  useEffect(() => initGlassGlow(), []);
 
   // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
   useEffect(() => {
@@ -431,26 +232,6 @@ export default function App() {
       /* ignore */
     }
   }, [songs, playerState.song?.id]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('music-nebula.session');
-      if (!raw) return;
-      const s = JSON.parse(raw) as { tracks?: DesktopTrack[]; currentId?: number };
-      if (!s.tracks?.length) return;
-      const restored = s.tracks.map((t, i) => toFrontendTrack(t, i));
-      libraryService.restoreSongs(restored);
-      setRevealedCount(restored.length);
-      revealedRef.current = restored.length;
-      visibleRef.current = new Set();
-      setVisibleIds([]);
-      const cur = restored.find((t) => t.id === s.currentId) ?? restored[0]!;
-      audioPlayer.restore(cur, restored);
-    } catch {
-      /* ignore */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // 音质档位：随当前歌曲变化拉取可用列表（桌面版）
   useEffect(() => {
@@ -480,79 +261,12 @@ export default function App() {
     };
   }, [playerState.song?.id, playerState.song?.sourceId]);
 
-  /** 渐进式生成：每 100ms 揭示一批卡片，总时长约 4 秒。 */
-  const startProgressiveReveal = useCallback((total: number, onDone?: () => void) => {
-    if (revealTimerRef.current !== null) window.clearInterval(revealTimerRef.current);
-    revealedRef.current = 0;
-    setRevealedCount(0);
-    const batch = Math.max(1, Math.ceil(total / 40));
-    const timer = window.setInterval(() => {
-      revealedRef.current = Math.min(total, revealedRef.current + batch);
-      setRevealedCount(revealedRef.current);
-      controllerRef.current?.refresh();
-      if (revealedRef.current >= total) {
-        window.clearInterval(timer);
-        revealTimerRef.current = null;
-        onDone?.();
-      }
-    }, 100);
-    revealTimerRef.current = timer;
-  }, []);
-
-  /** 统一入口：把解析好的歌曲集合交给星云（渐进生成）。 */
-  const beginImport = useCallback(
-    (adapterName: string, songs: Track[], simulated = false, note?: string) => {
-      visibleRef.current = new Set();
-      setVisibleIds([]);
-      libraryService.applyImported(songs);
-      setImporting(true);
-      spawnFromCenterRef.current = new Set(songs.map((_, i) => i));
-      startProgressiveReveal(songs.length, () => {
-        setImporting(false);
-        spawnFromCenterRef.current = null;
-        completeImport(
-          simulated ? 'warn' : 'done',
-          simulated ? `已导入 ${songs.length} 首（模拟）${note ?? ''}` : `已导入 ${songs.length} 首（${adapterName}）`,
-        );
-      });
-    },
-    [startProgressiveReveal, completeImport],
-  );
-
-  const resetImportState = useCallback(() => {
-    setHoveredId(null);
-    audioPlayer.stop();
-    setFailedIds(new Set());
-    lastFailedSongRef.current = null;
-    setLikedIds(new Set());
-  }, []);
-
   // 组合层接线：导入会话开始 → resetImportState；导入成功 → 曲库 + 歌单身份 + 渐进揭示
   sessionStartRef.current = resetImportState;
   commitRef.current = (c) => {
     if (c.meta) playlist.setCurrent(c.meta);
     beginImport(c.adapterName, c.tracks, c.simulated, c.note);
   };
-
-  const handleCardPlay = useCallback(async (songId: number) => {
-    const song = songsRef.current[songId];
-    if (!song) return;
-    let target = song;
-    if (!target.audio && hasDesktopAPI()) {
-      const res = await window.nebulaAPI!.resolveSong(toBackendTrack(target), preferredQuality() || undefined);
-      if (res.ok && res.data?.url) {
-        target = {
-          ...target,
-          audio: res.data.url,
-          trial: res.data.trial,
-          trialEndTime: res.data.trialEndTime,
-          quality: res.data.quality,
-        };
-      }
-    }
-    audioPlayer.playSong(target, songsRef.current);
-    setNowPlayingOpen(true);
-  }, []);
 
   /** 统一快速解析：主平台取链（内部含兜底）优先；同一 URL 不重试。 */
   const resolveTrackForPlay = useCallback(
@@ -602,23 +316,6 @@ export default function App() {
       .catch(() => audioPlayer.setError('音质切换失败'));
   }, []);
 
-  const handleReset = useCallback(() => {
-    setHoveredId(null);
-    const controller = controllerRef.current;
-    const song = audioPlayer.getState().song;
-    if (song && controller) {
-      const card = effectiveCardsRef.current[song.id];
-      if (card) {
-        const z = controller.zoom;
-        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-        const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-        controller.animateTo(panForCentering({ x: card.x, y: card.y }, vw, vh, z));
-        return;
-      }
-    }
-    controller?.reset();
-  }, []);
-
   /** 歌单列表：双击播放某首 → 回到该歌曲卡片中心。 */
   const playSongFromList = useCallback(
     (index: number) => {
@@ -654,17 +351,6 @@ export default function App() {
     window.setTimeout(() => setModeToast(''), 1800);
   }, []);
 
-  const handleToggleLike = useCallback(() => {
-    const song = audioPlayer.getState().song;
-    if (!song) return;
-    setLikedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(song.id)) next.delete(song.id);
-      else next.add(song.id);
-      return next;
-    });
-  }, []);
-
   /** 组合层接线：壁纸应用结果 → useBackground 设背景 + 关闭壁纸窗口。 */
   const handleWallpaperApply = useCallback(
     (_item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => {
@@ -691,9 +377,6 @@ export default function App() {
       /* 单个平台刷新失败不影响其他平台 */
     });
   }, [accounts, refreshAccount]);
-
-  const currentSongId = playerState.song?.id ?? null;
-  const liked = playerState.song ? likedIds.has(playerState.song.id) : false;
 
   if (isWallpaperView) {
     return (

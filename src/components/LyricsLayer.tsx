@@ -5,14 +5,7 @@ import { useVisualAtmosphere } from '../hooks/background/VisualAtmosphereContext
 import { SILVER_BLUE, lyricPaletteCssVars, paletteFromBaseColor } from '../lib/coverColors';
 import type { LyricLineUI } from '../lib/lyrics';
 import { currentLyricIndex } from '../lib/lyrics';
-
-export interface FrameBus {
-  x: number;
-  y: number;
-  zoom: number;
-  vw: number;
-  vh: number;
-}
+import type { FrameBus } from '../lib/stage';
 
 interface LyricsLayerProps {
   lines: LyricLineUI[];

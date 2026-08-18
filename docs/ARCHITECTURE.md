@@ -98,4 +98,4 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 6. `useBackground`（含 VisualAtmosphere 中间层迁移）+ `useInterfaceSettings`
 - [x] 7. `useSearchCluster` + `useEdgePanels`
 - [x] 8. 视图第二阶段（三 Context 落地 + 区块化：Playback / InterfaceSettings / VisualAtmosphere；LyricsLayer / NowPlayingPanel 叶子化；OverlayStack props 收敛；check-arch 修扩展名解析）
-- [ ] 9. `useStage`（最后，最高风险）
+- [x] 9. `useStage`（最后，最高风险：hovered/visible/failed/liked/渐进揭示/PanController/虚拟化数据全部收敛；App 仅剩组合接线）
