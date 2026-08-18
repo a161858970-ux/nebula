@@ -1,17 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useEffect } from 'react';
 import type { WheelEvent as ReactWheelEvent } from 'react';
+import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { formatTime } from '../lib/audio/AudioPlayer';
 import type { LyricLineUI } from '../lib/lyrics';
 import { currentLyricIndex } from '../lib/lyrics';
-import type { Track } from '../lib/catalog';
 
 interface NowPlayingPanelProps {
-  song: Track | null;
-  playing: boolean;
-  loading: boolean;
-  currentTime: number;
-  duration: number;
   liked: boolean;
   lines: LyricLineUI[];
   translateOn: boolean;
@@ -73,11 +68,6 @@ function LyricRegion({
 
 /** Z4 二级播放窗口：覆盖全局，背景模糊；左侧旋转封面，右侧信息与控制；歌词上下分区。 */
 export function NowPlayingPanel({
-  song,
-  playing,
-  loading,
-  currentTime,
-  duration,
   liked,
   lines,
   translateOn,
@@ -89,6 +79,9 @@ export function NowPlayingPanel({
   onToggleTranslate,
   onSeek,
 }: NowPlayingPanelProps) {
+  // 叶子高频订阅：进度/时长/播放状态
+  const playState = useAudioPlayer();
+  const { song, playing, loading, currentTime, duration } = playState;
   const [shift, setShift] = useState(0);
   const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 

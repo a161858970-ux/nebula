@@ -12,7 +12,6 @@ import { OverlayStack } from './components/OverlayStack';
 import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
-import { useAudioPlayer } from './lib/audio/useAudioPlayer';
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
@@ -26,14 +25,6 @@ import {
 import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from './lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from './lib/spatial';
 import type { BackgroundSetting } from './lib/backgrounds';
-import {
-  SILVER_BLUE,
-  coverCssVars,
-  lyricPaletteCssVars,
-  paletteFromBaseColor,
-  type CoverSample,
-  type LyricPalette,
-} from './lib/coverColors';
 import { initGlassGlow, registerProximity, unregisterProximity } from './lib/glassGlow';
 import { generateTracks } from './lib/catalog';
 import type { Track } from './lib/catalog';
@@ -49,6 +40,9 @@ import { useOverlays } from './hooks/overlays/useOverlays';
 import { useLyrics } from './hooks/lyrics/useLyrics';
 import { useBackground } from './hooks/background/useBackground';
 import { useInterfaceSettings } from './hooks/interfaceSettings/useInterfaceSettings';
+import { usePlayback } from './hooks/playback/PlaybackContext';
+import { InterfaceSettingsProvider } from './hooks/interfaceSettings/InterfaceSettingsContext';
+import { VisualAtmosphereProvider } from './hooks/background/VisualAtmosphereContext';
 import { useEdgePanels } from './hooks/edgePanels/useEdgePanels';
 import { useSearchCluster } from './hooks/searchCluster/useSearchCluster';
 import { libraryService } from './lib/library';
@@ -178,7 +172,8 @@ export default function App() {
   const edgePanels = useEdgePanels({ contextMenuRef });
   const { edge, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft } = edgePanels;
 
-  const playerState = useAudioPlayer();
+  // 低频播放状态（不含 currentTime/duration；高频值由叶子组件订阅）
+  const playerState = usePlayback();
 
   // ---------- 背景/界面设置领域（useBackground 产出 VisualAtmosphere；useInterfaceSettings） ----------
   const background = useBackground({
@@ -420,22 +415,6 @@ export default function App() {
   );
 
   useEffect(() => initGlassGlow(), []);
-
-  // 歌词配色桥（App 组合层）：从 VisualAtmosphere 推导歌词/封面 CSS 变量。
-  // useBackground 只产出 atmosphere，这里负责"氛围 → 歌词渲染变量"的落地。
-  useEffect(() => {
-    const root = document.documentElement;
-    const apply = (palette: LyricPalette, sample: CoverSample | null): void => {
-      const vars = { ...lyricPaletteCssVars(palette), ...coverCssVars(sample) };
-      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
-    };
-    if (lyricSettings.lyricColorSource === 'custom') {
-      apply(paletteFromBaseColor(lyricSettings.customColor), null);
-      return;
-    }
-    if (atmosphere.palette) apply(atmosphere.palette, atmosphere.sample);
-    else apply(SILVER_BLUE, null);
-  }, [lyricSettings.lyricColorSource, lyricSettings.customColor, atmosphere]);
 
   // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
   useEffect(() => {
@@ -731,6 +710,39 @@ export default function App() {
         : { type: 'preset', id: 'midnight' }
       : bgSetting;
 
+  // 界面设置 context（低频；App 组合层持有状态与 setter）
+  const interfaceSettingsValue = useMemo(
+    () => ({
+      lyricSettings,
+      uiHideCards,
+      uiHideLyrics,
+      lyricTranslationEnabled,
+      toggleHideCards,
+      toggleHideLyrics,
+      toggleTranslation,
+    }),
+    [
+      lyricSettings,
+      uiHideCards,
+      uiHideLyrics,
+      lyricTranslationEnabled,
+      toggleHideCards,
+      toggleHideLyrics,
+      toggleTranslation,
+    ],
+  );
+
+  // 视觉氛围 context（useBackground 只产出氛围数据，消费端自行推导歌词色板）
+  const atmosphereValue = useMemo(
+    () => ({
+      palette: atmosphere.palette,
+      sample: atmosphere.sample,
+      coverMode: bgCoverMode,
+      effectiveBg: effectiveBgSetting,
+    }),
+    [atmosphere.palette, atmosphere.sample, bgCoverMode, effectiveBgSetting],
+  );
+
   // 稳定 searchSlot（TopBar memo 化需要引用稳定）
   const searchSlot = useMemo(
     () => (
@@ -747,16 +759,15 @@ export default function App() {
   );
 
   return (
-    <main className="app">
+    <InterfaceSettingsProvider value={interfaceSettingsValue}>
+      <VisualAtmosphereProvider value={atmosphereValue}>
+        <main className="app">
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
 
       {!uiHideLyrics && (
         <LyricsLayer
           lines={lyricLines}
-          currentTime={playerState.currentTime}
-          playing={playerState.playing}
           frameBus={frameBusRef.current}
-          settings={lyricSettings}
           songKey={
             playerState.song
               ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}`
@@ -874,11 +885,6 @@ export default function App() {
 
       <OverlayStack
         nowPlayingOpen={nowPlayingOpen}
-        song={playerState.song}
-        playing={playerState.playing}
-        loading={playerState.loading}
-        currentTime={playerState.currentTime}
-        duration={playerState.duration}
         liked={liked}
         lines={lyricLines}
         translateOn={lyricTranslationEnabled}
@@ -901,6 +907,8 @@ export default function App() {
         onCloseContextMenu={closeContextMenu}
         onInsertNext={insertNextSong}
       />
-    </main>
+        </main>
+      </VisualAtmosphereProvider>
+    </InterfaceSettingsProvider>
   );
 }

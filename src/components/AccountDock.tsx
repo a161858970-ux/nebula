@@ -3,8 +3,8 @@ import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
 import type { BackgroundSetting } from '../lib/backgrounds';
-import type { CoverBgMode } from './BackgroundLayer';
-import type { LyricVisualSettings } from './LyricsLayer';
+import type { CoverBgMode } from '../lib/backgrounds';
+import type { LyricVisualSettings } from '../lib/lyricSettings';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
 export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';

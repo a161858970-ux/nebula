@@ -9,11 +9,6 @@ import { InfoModals } from './InfoModals';
 
 interface OverlayStackProps {
   nowPlayingOpen: boolean;
-  song: Track | null;
-  playing: boolean;
-  loading: boolean;
-  currentTime: number;
-  duration: number;
   liked: boolean;
   lines: LyricLineUI[];
   translateOn: boolean;
@@ -43,11 +38,6 @@ interface OverlayStackProps {
  */
 export const OverlayStack = memo(function OverlayStack({
   nowPlayingOpen,
-  song,
-  playing,
-  loading,
-  currentTime,
-  duration,
   liked,
   lines,
   translateOn,
@@ -72,13 +62,8 @@ export const OverlayStack = memo(function OverlayStack({
 }: OverlayStackProps) {
   return (
     <>
-      {nowPlayingOpen && song && (
+      {nowPlayingOpen && (
         <NowPlayingPanel
-          song={song}
-          playing={playing}
-          loading={loading}
-          currentTime={currentTime}
-          duration={duration}
           liked={liked}
           lines={lines}
           translateOn={translateOn}

@@ -57,11 +57,15 @@ view blocks（同层互不依赖，组合只由 App 完成）
 
 | Context | 值 | 高频值 |
 | --- | --- | --- |
-| `PlaybackProvider` | `{ song, playing, mode, quality, loading, failed, error }` | 不含 currentTime / duration / progress |
+| `PlaybackProvider` | `{ song, playing, mode, quality, loading, failed, error, qualities }` | 不含 currentTime / duration / progress |
 | `InterfaceSettingsProvider` | `{ lyricSettings, uiHideCards, uiHideLyrics, lyricTranslationEnabled }` + setters | — |
-| `VisualAtmosphereProvider` | `{ lyricPalette, glowRgb, coverMode, effectiveBg }` | — |
+| `VisualAtmosphereProvider` | `{ palette, sample, coverMode, effectiveBg }` | — |
 
-高频订阅（`useAudioPlayer()` 叶子）：仅 `BottomBar`、`NowPlayingPanel`。
+高频订阅（`useAudioPlayer()` 叶子）：`LyricsLayer`（Z1 歌词进度）、`BottomBar`（进度条/时间）、`NowPlayingPanel`（二级页歌词）。
+
+> 实现注记：`PlaybackProvider` 挂在入口（`main.tsx`），因为 App 自身也消费低频播放状态——
+> Provider 若由 App 渲染，则无法给 App 自身供值。其余两个 Provider 的值由 App 组合层
+> 用 `useMemo` 生成并下传子区块，App 不消费它们。
 
 ## 5. 视图区块（按 Z 轴 + 功能边界）
 
@@ -93,5 +97,5 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 5. `useLyrics`（含 `lib/lyricSettings.ts` 共享类型；翻译开关更名 lyricTranslationEnabled）
 - [x] 6. `useBackground`（含 VisualAtmosphere 中间层迁移）+ `useInterfaceSettings`
 - [x] 7. `useSearchCluster` + `useEdgePanels`
-- [ ] 8. 视图第二阶段（LyricsOverlay / StageCanvas 接线）
+- [x] 8. 视图第二阶段（三 Context 落地 + 区块化：Playback / InterfaceSettings / VisualAtmosphere；LyricsLayer / NowPlayingPanel 叶子化；OverlayStack props 收敛；check-arch 修扩展名解析）
 - [ ] 9. `useStage`（最后，最高风险）

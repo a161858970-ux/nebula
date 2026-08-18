@@ -10,7 +10,7 @@
  *  5. stage 不得接触 accounts（由 2 + 区块规则覆盖）
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,8 +32,6 @@ const BLOCKS = [
   'components/AccountDock.tsx',
   'components/PlaylistDock.tsx',
   'components/OverlayStack.tsx',
-  'components/NowPlayingPanel.tsx',
-  'components/InfoModals.tsx',
 ];
 
 function listFiles(dir) {
@@ -57,7 +55,12 @@ function importsOf(file) {
 
 function resolveTarget(fromFile, spec) {
   if (!spec.startsWith('.')) return null; // 裸导入（node_modules）忽略
-  const p = resolve(dirname(fromFile), spec);
+  let p = resolve(dirname(fromFile), spec);
+  // 无扩展名导入（项目惯例）：补全 .tsx / .ts，使规则能命中 BLOCKS 清单
+  if (!/\.[a-zA-Z]+$/.test(p)) {
+    if (existsSync(p + '.tsx')) p += '.tsx';
+    else if (existsSync(p + '.ts')) p += '.ts';
+  }
   const rel = relative(SRC, p).split(sep).join('/');
   return rel;
 }

@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 8 步：三 Context 落地 + 区块化 + 叶子高频订阅
+
+**改动**
+
+- 新增 `src/hooks/playback/PlaybackContext.tsx`：`PlaybackProvider` 订阅 audioPlayer 单例，`same()` 引用对比只广播低频字段（song/playing/mode/quality/loading/failed/error/qualities），不含 currentTime/duration；挂载于 `main.tsx`（App 自身也消费，Provider 必须在 App 之上）。
+- 新增 `src/hooks/interfaceSettings/InterfaceSettingsContext.tsx` 与 `src/hooks/background/VisualAtmosphereContext.tsx`：值由 App 组合层 `useMemo` 生成并下传。
+- `LyricsLayer`：删 props（currentTime/playing/settings），内部 `useAudioPlayer()` 叶子订阅 + 两个 context；自行从 custom/atmosphere 推导色板并写 `--lyric-*` 变量（原 App「歌词配色桥」effect 移除，`--cover-*` 变量本就无消费方）。
+- `NowPlayingPanel` / `OverlayStack`：删 song/playing/loading/currentTime/duration props，NowPlayingPanel 内部叶子订阅。
+- `check-arch.mjs`：修 resolveTarget 扩展名解析（此前 BLOCKS 规则对无扩展名导入失效）；BLOCKS 移除 NowPlayingPanel/InfoModals（它们是 OverlayStack 组成面板）；AccountDock 类型导入改走 `lib/backgrounds` / `lib/lyricSettings`，删除组件内冗余 re-export。
+- App.tsx：`useAudioPlayer()` → `usePlayback()`（低频）；删除歌词配色桥 effect 与 coverColors 相关 import；LyricsLayer/OverlayStack JSX props 收敛。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（音质菜单链路经 QA 10g 验证，修复了 Provider 位置导致 songQualities 不触发的回归）。
+
+**遗留与风险**
+
+- App 仍持有 stage 领域状态（hovered/visible/failed/liked/渐进揭示/PanController），第 9 步 useStage 迁移。
+
 ## 2026-08-18 — 架构收敛第 7 步：useSearchCluster + useEdgePanels
 
 **改动**

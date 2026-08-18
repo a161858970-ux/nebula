@@ -1,4 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
+import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
+import { useVisualAtmosphere } from '../hooks/background/VisualAtmosphereContext';
+import { SILVER_BLUE, lyricPaletteCssVars, paletteFromBaseColor } from '../lib/coverColors';
 import type { LyricLineUI } from '../lib/lyrics';
 import { currentLyricIndex } from '../lib/lyrics';
 
@@ -10,16 +14,9 @@ export interface FrameBus {
   vh: number;
 }
 
-import type { LyricVisualSettings } from '../lib/lyricSettings';
-
-export type { LyricVisualSettings };
-
 interface LyricsLayerProps {
   lines: LyricLineUI[];
-  currentTime: number;
-  playing: boolean;
   frameBus: FrameBus;
-  settings: LyricVisualSettings;
   /** 当前歌曲唯一标识：切歌时立即重置飞行状态。 */
   songKey?: string;
   /** 前奏/纯音乐时居中展示的歌曲信息。 */
@@ -125,14 +122,24 @@ function usableNext(lines: LyricLineUI[], from: number): number {
  */
 export function LyricsLayer({
   lines,
-  currentTime,
-  playing,
   frameBus,
-  settings,
   songKey,
   songTitle,
   songArtist,
 }: LyricsLayerProps) {
+  // 叶子高频订阅（播放进度）+ 上下文（设置 / 氛围色板）
+  const playState = useAudioPlayer();
+  const currentTime = playState.currentTime;
+  const playing = playState.playing;
+  const { lyricSettings: settings } = useInterfaceSettingsContext();
+  const { palette: atmoPalette } = useVisualAtmosphere();
+  const palette = useMemo(
+    () =>
+      settings.lyricColorSource === 'custom'
+        ? paletteFromBaseColor(settings.customColor)
+        : atmoPalette ?? SILVER_BLUE,
+    [settings.lyricColorSource, settings.customColor, atmoPalette],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const elRefs = useRef(new Map<number, HTMLSpanElement>());
   const wordEls = useRef(new Map<string, HTMLSpanElement>());
@@ -548,6 +555,7 @@ export function LyricsLayer({
           '--lyric-size': `${settings.fontSize}px`,
           '--lyric-rise': `${settings.wordRise}px`,
           '--lyric-weight': settings.bold ? 700 : 600,
+          ...lyricPaletteCssVars(palette),
         } as CSSProperties
       }
       aria-hidden="true"

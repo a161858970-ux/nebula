@@ -5,8 +5,6 @@ import { Starfield } from './Starfield';
 
 import type { CoverBgMode } from '../lib/backgrounds';
 
-export type { CoverBgMode };
-
 export function BackgroundLayer({
   setting,
   coverMode,
