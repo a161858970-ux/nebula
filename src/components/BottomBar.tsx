@@ -1,4 +1,4 @@
-import { useRef, useState, type WheelEvent } from 'react';
+import { memo, useRef, useState, type WheelEvent } from 'react';
 import { audioPlayer, formatTime, type PlayMode } from '../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 
@@ -130,7 +130,7 @@ function UpPanel({ label, title, children, disabled }: {
   );
 }
 
-export function BottomBar({
+export const BottomBar = memo(function BottomBar({
   translateOn,
   qualities,
   quality,
@@ -266,4 +266,4 @@ export function BottomBar({
       </div>
     </footer>
   );
-}
+});

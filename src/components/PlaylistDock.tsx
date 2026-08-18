@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
 import type { ImportStatus } from './ImportBar';
@@ -74,7 +74,7 @@ function ManualImport({
  * 左侧歌单导入 Dock —— 原型 dock-prototype-v3.html 的逐行移植。
  * 视觉真源：prototype/dock-prototype-v3.html（用户已验证定稿，勿改结构/类名）。
  */
-export function PlaylistDock({
+export const PlaylistDock = memo(function PlaylistDock({
   visible,
   accounts,
   importStatus,
@@ -305,4 +305,4 @@ export function PlaylistDock({
       })}
     </div>
   );
-}
+});

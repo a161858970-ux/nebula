@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
@@ -342,7 +342,7 @@ const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
  * 右侧 Dock（登录 / 设置）—— 原型 dock-prototype-v3.html 的逐行移植。
  * 视觉真源：prototype/dock-prototype-v3.html（用户已验证定稿，勿改结构/类名）。
  */
-export function AccountDock({
+export const AccountDock = memo(function AccountDock({
   visible,
   platforms,
   accounts,
@@ -807,4 +807,4 @@ export function AccountDock({
       </div>
     </div>
   );
-}
+});

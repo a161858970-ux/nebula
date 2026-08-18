@@ -5,12 +5,11 @@ import { BottomBar } from './components/BottomBar';
 import { MusicCard } from './components/MusicCard';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer, type FrameBus, type LyricVisualSettings } from './components/LyricsLayer';
-import { NowPlayingPanel } from './components/NowPlayingPanel';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
 import { WallpaperPicker } from './components/WallpaperPicker';
-import { InfoModals } from './components/InfoModals';
+import { OverlayStack } from './components/OverlayStack';
 import { PanController } from './lib/panEngine';
 import type { PanFrame } from './lib/panEngine';
 import { audioPlayer } from './lib/audio/AudioPlayer';
@@ -206,9 +205,11 @@ export default function App() {
   // 转发 ref：打破 TDZ，保持 hook 调用顺序稳定（resetImportState / beginImport 在其后定义）
   const sessionStartRef = useRef<() => void>(() => {});
   const commitRef = useRef<(c: ImportCommit) => void>(() => {});
+  const handleImportSessionStart = useCallback(() => sessionStartRef.current(), []);
+  const handleImportCommitted = useCallback((c: ImportCommit) => commitRef.current(c), []);
   const importer = usePlaylistImport({
-    onSessionStart: () => sessionStartRef.current(),
-    onImported: (c) => commitRef.current(c),
+    onSessionStart: handleImportSessionStart,
+    onImported: handleImportCommitted,
   });
   const { complete: completeImport } = importer;
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
@@ -526,6 +527,27 @@ export default function App() {
     },
     [scheduleHidePanel],
   );
+
+  // 稳定回调（供 memo 化的 HUD 区块使用，避免内联箭头破坏 memo）
+  const enterTop = useCallback(() => enterPanel('top'), [enterPanel]);
+  const leaveTop = useCallback(() => leavePanel('top'), [leavePanel]);
+  const enterRight = useCallback(() => enterPanel('right'), [enterPanel]);
+  const leaveRight = useCallback(() => leavePanel('right'), [leavePanel]);
+  const enterLeft = useCallback(() => enterPanel('left'), [enterPanel]);
+  const leaveLeft = useCallback(() => leavePanel('left'), [leavePanel]);
+
+  const openNowPlaying = useCallback(() => setNowPlayingOpen(true), [setNowPlayingOpen]);
+  const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), [setNowPlayingOpen]);
+  const togglePlay = useCallback(() => audioPlayer.toggle(), []);
+  const playPrev = useCallback(() => audioPlayer.prev(), []);
+  const playNext = useCallback(() => audioPlayer.next(), []);
+  const seekTo = useCallback((t: number) => audioPlayer.seek(t), []);
+  const openWallpapers = useCallback(() => {
+    if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
+    else setWallpaperOpen(true);
+  }, []);
+  const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
+  const closeInfo = useCallback(() => setInfoModal(null), [setInfoModal]);
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
@@ -1080,6 +1102,21 @@ export default function App() {
         : { type: 'preset', id: 'midnight' }
       : bgSetting;
 
+  // 稳定 searchSlot（TopBar memo 化需要引用稳定）
+  const searchSlot = useMemo(
+    () => (
+      <SearchBar
+        songs={songs}
+        onPick={handleSearchPick}
+        onSearchAll={handleSearchAll}
+        onQueryChange={handleSearchQueryChange}
+        onPlayNetworkSong={handlePlayNetworkSong}
+        onOpenArtist={openArtistFromChip}
+      />
+    ),
+    [songs, handleSearchPick, handleSearchAll, handleSearchQueryChange, handlePlayNetworkSong, openArtistFromChip],
+  );
+
   return (
     <main className="app">
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
@@ -1132,18 +1169,9 @@ export default function App() {
         visible={edge.top}
         total={songs.length}
         localBusy={importer.localBusy}
-        searchSlot={
-          <SearchBar
-            songs={songs}
-            onPick={handleSearchPick}
-            onSearchAll={handleSearchAll}
-            onQueryChange={handleSearchQueryChange}
-            onPlayNetworkSong={handlePlayNetworkSong}
-            onOpenArtist={openArtistFromChip}
-          />
-        }
-        onEnter={() => enterPanel('top')}
-        onLeave={() => leavePanel('top')}
+        searchSlot={searchSlot}
+        onEnter={enterTop}
+        onLeave={leaveTop}
         onOpenLocal={importer.openLocal}
       />
 
@@ -1158,8 +1186,8 @@ export default function App() {
         lyricSettings={lyricSettings}
         uiHideCards={uiHideCards}
         uiHideLyrics={uiHideLyrics}
-        onEnter={() => enterPanel('right')}
-        onLeave={() => leavePanel('right')}
+        onEnter={enterRight}
+        onLeave={leaveRight}
         onSelectPlatform={setDrawerPlatform}
         onRefreshAccount={refreshAccount}
         onSelectBg={handleSelectBg}
@@ -1176,10 +1204,7 @@ export default function App() {
         onLyricBold={handleLyricBold}
         onToggleHideCards={toggleHideCards}
         onToggleHideLyrics={toggleHideLyrics}
-        onOpenWallpapers={() => {
-          if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
-          else setWallpaperOpen(true);
-        }}
+        onOpenWallpapers={openWallpapers}
       />
 
       <PlaylistDock
@@ -1187,8 +1212,8 @@ export default function App() {
         accounts={accounts}
         importStatus={importer.importStatus}
         importMessage={importer.importMessage}
-        onEnter={() => enterPanel('left')}
-        onLeave={() => leavePanel('left')}
+        onEnter={enterLeft}
+        onLeave={leaveLeft}
         onImportPlaylist={importer.importPlaylistId}
         onImportUrl={importer.importUrl}
         onGoLogin={handleGoLogin}
@@ -1212,57 +1237,41 @@ export default function App() {
         onToggleTranslate={handleToggleTranslate}
         onSelectQuality={handleQualitySelect}
         onCycleMode={cycleModeWithToast}
-        onOpenNowPlaying={() => setNowPlayingOpen(true)}
+        onOpenNowPlaying={openNowPlaying}
         onOpenComments={openCommentsModal}
         onOpenSongDetail={openSongDetailModal}
         onOpenArtist={openArtistByName}
       />
 
-      {nowPlayingOpen && playerState.song && (
-        <NowPlayingPanel
-          song={playerState.song}
-          playing={playerState.playing}
-          loading={playerState.loading}
-          currentTime={playerState.currentTime}
-          duration={playerState.duration}
-          liked={liked}
-          lines={lyricLines}
-          translateOn={lyricTranslate}
-          onClose={() => setNowPlayingOpen(false)}
-          onTogglePlay={() => audioPlayer.toggle()}
-          onPrev={() => audioPlayer.prev()}
-          onNext={() => audioPlayer.next()}
-          onToggleLike={handleToggleLike}
-          onToggleTranslate={handleToggleTranslate}
-          onSeek={(t) => audioPlayer.seek(t)}
-        />
-      )}
-      {wallpaperOpen && (
-        <WallpaperPicker onClose={() => setWallpaperOpen(false)} onApply={handleWallpaperApply} />
-      )}
-      <InfoModals
-        modal={infoModal}
-        onClose={() => setInfoModal(null)}
+      <OverlayStack
+        nowPlayingOpen={nowPlayingOpen}
+        song={playerState.song}
+        playing={playerState.playing}
+        loading={playerState.loading}
+        currentTime={playerState.currentTime}
+        duration={playerState.duration}
+        liked={liked}
+        lines={lyricLines}
+        translateOn={lyricTranslate}
+        wallpaperOpen={wallpaperOpen}
+        infoModal={infoModal}
+        modeToast={modeToast}
+        contextMenu={contextMenu}
+        onCloseNowPlaying={closeNowPlaying}
+        onTogglePlay={togglePlay}
+        onPrev={playPrev}
+        onNext={playNext}
+        onToggleLike={handleToggleLike}
+        onToggleTranslate={handleToggleTranslate}
+        onSeek={seekTo}
+        onCloseWallpaper={closeWallpaper}
+        onApplyWallpaper={handleWallpaperApply}
+        onCloseInfo={closeInfo}
         onOpenArtist={openArtistFromChip}
         onPlayArtistTrack={handlePlayArtistTrack}
+        onCloseContextMenu={closeContextMenu}
+        onInsertNext={insertNextSong}
       />
-      {modeToast && <div className="mode-toast">{modeToast}</div>}
-      {contextMenu && (
-        <>
-          <div className="ctx-backdrop" onPointerDown={closeContextMenu} onContextMenu={(e) => e.preventDefault()} />
-          <div className="ctx-menu glass" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button
-              onClick={() => {
-                insertNextSong(contextMenu.track);
-                closeContextMenu();
-              }}
-            >
-              下一首播放
-            </button>
-            <button onClick={closeContextMenu}>取消</button>
-          </div>
-        </>
-      )}
     </main>
   );
 }

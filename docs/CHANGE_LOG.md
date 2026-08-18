@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 4 步：OverlayStack 抽取 + HUD memo 化
+
+**改动**
+
+- 新增 `src/components/OverlayStack.tsx`（Z4 浮层区块）：二级播放窗 / 壁纸窗口 / 信息弹层 / 模式 toast / 右键菜单合并为单一 memo 区块，App 的浮层 JSX 收敛为一行组件调用。
+- TopBar / AccountDock / PlaylistDock / BottomBar 全部 `React.memo` 化；App 提供稳定回调（enter/leave 三面板、播放器 toggle/prev/next/seek、壁纸开关、弹层开关），`searchSlot` 用 `useMemo` 稳定化，消除内联箭头对 memo 的破坏。
+- usePlaylistImport 的 onSessionStart/onImported 改为稳定 useCallback（组合层转发 ref），保证 importer 方法身份稳定。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿。
+
 ## 2026-08-18 — 架构收敛第 3 步：useOverlays
 
 **改动**
