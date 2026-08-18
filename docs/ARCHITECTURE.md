@@ -88,7 +88,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 
 - [x] 1. `useAccounts`
 - [x] 2. `LibraryService` + `useLibrary` + `usePlaylist` + `usePlaylistImport`（含 `lib/playlistTypes.ts` 共享类型；会话记忆效果暂留 App，随 Stage 步迁移）
-- [ ] 3. `useOverlays`
+- [x] 3. `useOverlays`
 - [ ] 4. 视图第一阶段（HUD / OverlayStack 接线，App 开始瘦身）
 - [ ] 5. `useLyrics`
 - [ ] 6. `useBackground`（含 VisualAtmosphere 中间层迁移）

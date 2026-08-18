@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
 import type { CoverBgMode } from './components/BackgroundLayer';
 import { BottomBar } from './components/BottomBar';
@@ -44,6 +44,7 @@ import { useAccounts } from './hooks/accounts/useAccounts';
 import { useLibrary } from './hooks/library/useLibrary';
 import { usePlaylist } from './hooks/playlist/usePlaylist';
 import { usePlaylistImport, type ImportCommit } from './hooks/playlistImport/usePlaylistImport';
+import { useOverlays } from './hooks/overlays/useOverlays';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -135,7 +136,6 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
-  const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [lyricTranslate, setLyricTranslate] = useState(
     () => typeof localStorage === 'undefined' || localStorage.getItem('music-nebula.lyric-translate') !== '0',
   );
@@ -212,17 +212,25 @@ export default function App() {
   });
   const { complete: completeImport } = importer;
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null);
-  const contextMenuRef = useRef(contextMenu);
-  contextMenuRef.current = contextMenu;
-  const [infoModal, setInfoModal] = useState<{
-    kind: 'comments' | 'song' | 'artist';
-    track?: Track;
-    platform?: string;
-    artistId?: string;
-    artistName?: string;
-  } | null>(null);
-  const [modeToast, setModeToast] = useState('');
+  // ---------- 浮层领域（useOverlays） ----------
+  const overlays = useOverlays();
+  const {
+    contextMenu,
+    contextMenuRef,
+    infoModal,
+    nowPlayingOpen,
+    modeToast,
+    openContextMenu,
+    closeContextMenu,
+    openCommentsModal,
+    openSongDetailModal,
+    openArtistByName,
+    openArtistFromChip,
+    playArtistTrack,
+    setNowPlayingOpen,
+    setModeToast,
+    setInfoModal,
+  } = overlays;
 
   // ---------- 边缘感应面板 ----------
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
@@ -885,62 +893,13 @@ export default function App() {
 
   const insertNextSong = useCallback((track: Track) => playlist.insertNext(track), [playlist]);
 
-  const openContextMenu = useCallback((e: MouseEvent, track: Track) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, track });
-  }, []);
-
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
-
-  const openCommentsModal = useCallback(() => {
-    const song = audioPlayer.getState().song;
-    if (!song) return;
-    setInfoModal({ kind: 'comments', track: song });
-  }, []);
-
-  const openSongDetailModal = useCallback(() => {
-    const song = audioPlayer.getState().song;
-    if (!song) return;
-    setInfoModal({ kind: 'song', track: song });
-  }, []);
-
-  /** 底部条点击歌手名：先取详情拿歌手 id；多个/匹配不到时退回详情页。 */
-  const openArtistByName = useCallback((name: string) => {
-    const song = audioPlayer.getState().song;
-    if (!song || !hasDesktopAPI()) return;
-    window.nebulaAPI!
-      .songDetail(toBackendTrack(song))
-      .then((res) => {
-        if (!res.ok || !res.data) {
-          setInfoModal({ kind: 'song', track: song });
-          return;
-        }
-        const parts = name.split(/[\/、&,，]/).map((s) => s.trim()).filter(Boolean);
-        const match = res.data.artists.filter((a) =>
-          parts.some((p) => p === a.name || p.includes(a.name) || a.name.includes(p)),
-        );
-        if (match.length === 1) {
-          setInfoModal({ kind: 'artist', platform: res.data.platform, artistId: match[0]!.id, artistName: match[0]!.name });
-        } else {
-          setInfoModal({ kind: 'song', track: song });
-        }
-      })
-      .catch(() => setInfoModal({ kind: 'song', track: song }));
-  }, []);
-
-  const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
-    setInfoModal({ kind: 'artist', platform, artistId, artistName: name });
-  }, []);
-
-  const playArtistTrack = useCallback(
+  /** 歌手页点播：overlays.playArtistTrack + 回到中心（组合层接线）。 */
+  const handlePlayArtistTrack = useCallback(
     (t: DesktopTrack) => {
-      const front = toFrontendTrack(t, songsRef.current.length);
-      audioPlayer.playSong(front, [...songsRef.current, front]);
-      setNowPlayingOpen(false);
+      playArtistTrack(t);
       handleReset();
     },
-    [handleReset],
+    [playArtistTrack, handleReset],
   );
 
   const cycleModeWithToast = useCallback(() => {
@@ -1285,7 +1244,7 @@ export default function App() {
         modal={infoModal}
         onClose={() => setInfoModal(null)}
         onOpenArtist={openArtistFromChip}
-        onPlayArtistTrack={playArtistTrack}
+        onPlayArtistTrack={handlePlayArtistTrack}
       />
       {modeToast && <div className="mode-toast">{modeToast}</div>}
       {contextMenu && (

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 3 步：useOverlays
+
+**改动**
+
+- 新增 `src/hooks/overlays/useOverlays.ts`：右键菜单（含 contextMenuRef）/ 信息弹层（评论·详情·歌手）/ 二级播放窗 / 模式 toast 的状态与 handlers 全部迁出；只依赖 audioPlayer / LibraryService / IPC 服务。
+- App：nowPlayingOpen / modeToast / contextMenu / infoModal 四个状态与 openContextMenu…playArtistTrack 六个 handler 移除；歌手页点播由组合层 `handlePlayArtistTrack = playArtistTrack + handleReset` 接线。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿。
+
 ## 2026-08-18 — 架构收敛第 2 步：LibraryService + useLibrary + usePlaylist + usePlaylistImport
 
 **改动**
