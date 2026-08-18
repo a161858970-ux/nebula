@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-08-18 — 架构收敛第 1 步：ARCHITECTURE.md + check-arch + useAccounts
+
+**改动**
+
+- 新增 `docs/ARCHITECTURE.md`（App.tsx 领域化收敛唯一真源）：领域清单（11 hooks + LibraryService/audioPlayer）、依赖 DAG、3 个 Context 形状、视图区块、Dependency Rules 7 条、插花式迁移路线 9 步。
+- 新增 `scripts/check-arch.mjs`（机制化依赖守卫，接入 `pnpm check:arch` 并随 `pnpm qa` 运行）：lib→hooks/components、hooks 跨领域（白名单）、同层区块互依等规则。
+- 迁移第 1 步：账号域抽出 `src/hooks/accounts/useAccounts.ts`（platforms/accounts/loginNonce/drawerPlatform + 探活/refresh/requestLogin）；App 只保留组合层 `handleGoLogin = requestLogin + showPanel`。
+
+**验证**
+
+- pnpm build / check:arch / qa 全绿（行为零变化）；后续步骤按 ARCHITECTURE.md 路线继续。
+
 ## 2026-08-17 — 顶部搜索全网搜索/点播 + 歌手卡片 + 查询保留
 
 **改动**

@@ -41,9 +41,8 @@ import type { Track } from './lib/catalog';
 import { mulberry32 } from './lib/rng';
 import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from './lib/search';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
-import type { DesktopLoginPlatform, DesktopPlaylistSummary } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
-import { emptyAccount, type AccountState } from './lib/accounts';
+import { useAccounts } from './hooks/accounts/useAccounts';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
 const CARD_COUNT = 1000;
@@ -186,11 +185,16 @@ export default function App() {
     return 'blend';
   });
 
-  // ---------- 多平台账号状态（可并行登录） ----------
-  const [platforms, setPlatforms] = useState<DesktopLoginPlatform[]>([]);
-  const [accounts, setAccounts] = useState<Record<string, AccountState>>({});
-  const [loginNonce, setLoginNonce] = useState(0);
-  const [drawerPlatform, setDrawerPlatform] = useState('netease');
+  // ---------- 多平台账号状态（领域 hook：useAccounts） ----------
+  const {
+    platforms,
+    accounts,
+    loginNonce,
+    drawerPlatform,
+    refreshAccount,
+    setDrawerPlatform,
+    requestLogin,
+  } = useAccounts();
   const [localBusy, setLocalBusy] = useState(false);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState<{
@@ -521,63 +525,6 @@ export default function App() {
     document.addEventListener('pointermove', onMove);
     return () => document.removeEventListener('pointermove', onMove);
   }, [showPanel, scheduleHidePanel]);
-
-  // ---------- 多平台账号：启动并行探活 ----------
-  const refreshAccount = useCallback(async (platform: string) => {
-    if (!hasDesktopAPI()) return;
-    const api = window.nebulaAPI!;
-    setAccounts((prev) => ({
-      ...prev,
-      [platform]: { ...(prev[platform] ?? emptyAccount(platform)), loading: true },
-    }));
-    try {
-      const acc = await api.loginAccount(platform);
-      const loggedIn = !!(acc.ok && acc.data?.loggedIn);
-      let playlists: DesktopPlaylistSummary[] = [];
-      if (loggedIn) {
-        const pl = await api.loginPlaylists(platform);
-        if (pl.ok) playlists = pl.data;
-      }
-      setAccounts((prev) => ({
-        ...prev,
-        [platform]: {
-          platform,
-          loggedIn,
-          nickname: acc.ok ? acc.data?.nickname : undefined,
-          avatarUrl: acc.ok ? acc.data?.avatarUrl : undefined,
-          isVip: acc.ok ? acc.data?.isVip : undefined,
-          isSvip: acc.ok ? acc.data?.isSvip : undefined,
-          playlists,
-          loading: false,
-        },
-      }));
-    } catch {
-      setAccounts((prev) => ({
-        ...prev,
-        [platform]: { ...(prev[platform] ?? emptyAccount(platform)), loading: false },
-      }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!hasDesktopAPI()) return;
-    let cancelled = false;
-    window.nebulaAPI!
-      .loginPlatforms()
-      .then((res) => {
-        if (!res.ok) return;
-        setPlatforms(res.data);
-        if (cancelled) return;
-        const targets = res.data.filter((p) => p.kind === 'qr' || p.kind === 'oauth');
-        return Promise.all(targets.map((p) => refreshAccount(p.platform)));
-      })
-      .catch(() => {
-        /* 探活失败静默 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshAccount]);
 
   // 背景像素采样 → 全局光照 / 歌词 / 玻璃高光配色
   const currentCover = playerState.song?.cover ?? '';
@@ -1187,13 +1134,13 @@ export default function App() {
     }
   }, []);
 
+  /** 组合层接线：账号域 requestLogin + 边缘面板 showPanel。 */
   const handleGoLogin = useCallback(
     (platform: string) => {
-      setDrawerPlatform(platform);
-      setLoginNonce((n) => n + 1);
+      requestLogin(platform);
       showPanel('right');
     },
-    [showPanel],
+    [requestLogin, showPanel],
   );
 
   /** 全平台歌单一键刷新：只刷新已登录平台，账号信息与歌单一并重新拉取。 */

@@ -14,7 +14,8 @@
     "qa:qq-live": "pnpm build:main && node scripts/qq-live-check.mjs",
     "qa:desktop-play": "node scripts/desktop-play-smoke.mjs",
     "preview": "vite preview",
-    "qa": "node scripts/qa.cjs"
+    "qa": "node scripts/check-arch.mjs && node scripts/qa.cjs",
+    "check:arch": "node scripts/check-arch.mjs"
   },
   "dependencies": {
     "@neteasecloudmusicapienhanced/api": "4.40.0",
