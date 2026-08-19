@@ -528,7 +528,7 @@ export function LyricsLayer({
             if (cached === undefined || Math.abs(cached - wp) > 0.0005) {
               wpCacheRef.current.set(key, wp);
               wEl.style.setProperty('--wp', wp.toFixed(3));
-              wEl.style.setProperty('--feather', '0.03');
+              wEl.style.setProperty('--feather', '0.06');
             }
           }
         } else if (line && line.text) {
