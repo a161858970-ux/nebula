@@ -1,7 +1,7 @@
 # Music Nebula — 项目总览与开发手册
 
 > 可视化 3D 音乐播放器（桌面版 Electron + 前端 3D 卡片星云墙）。
-> 本文档与 `CHANGE_LOG.md`、`NOTES.md`、`UI_SPEC.md` 配套维护：每次代码变更必须同步追加变更日志。
+> 本文档与 `HANDOFF.md`、`CHANGE_LOG.md`、`NOTES.md`、`UI_SPEC.md`、`LYRICS_SYSTEM.md` 配套维护：每次代码变更必须同步追加变更日志；跨模型/跨 agent 接手先读 `HANDOFF.md`。
 
 ## 1. 项目定位
 
