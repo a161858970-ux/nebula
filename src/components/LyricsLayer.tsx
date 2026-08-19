@@ -3,8 +3,7 @@ import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
 import { useVisualAtmosphere } from '../hooks/background/VisualAtmosphereContext';
 import { SILVER_BLUE, lyricPaletteCssVars, paletteFromBaseColor } from '../lib/coverColors';
-import type { LyricLineUI } from '../lib/lyrics';
-import { currentLyricIndex } from '../lib/lyrics';
+import { currentLyricIndex, type LyricLineUI, type LyricWordUI } from '../lib/lyrics';
 import type { FrameBus } from '../lib/stage';
 
 interface LyricsLayerProps {
@@ -182,6 +181,46 @@ export function LyricsLayer({
     styleRef.current = settings.highlightStyle;
     wpCacheRef.current.clear();
   }
+
+  /** float 模式伪逐字：仅 highlightStyle === 'float' 时，为无 words 的 LRC 行
+   *  按 CJK 逐字 / Latin 按词均匀分配时间生成 word-level 数据。
+   *  sweep 模式返回空 Map → 走原有 whole-line 回退路径。 */
+  const pseudoWordsMap = useMemo(() => {
+    if (settings.highlightStyle !== 'float') return new Map<number, LyricWordUI[]>();
+    const map = new Map<number, LyricWordUI[]>();
+    const CJK = /[\u2E80-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF]/;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.words?.length || !line.text) continue;
+      // 分词：CJK 逐字，Latin 按空格分词
+      const tokens: string[] = [];
+      let buf = '';
+      for (const ch of line.text) {
+        if (CJK.test(ch)) {
+          if (buf) { tokens.push(buf); buf = ''; }
+          tokens.push(ch);
+        } else if (ch === ' ') {
+          if (buf) { tokens.push(buf); buf = ''; }
+        } else {
+          buf += ch;
+        }
+      }
+      if (buf) tokens.push(buf);
+      if (tokens.length <= 1) continue;
+      const gap = lines[i + 1] != null
+        ? Math.min(12000, Math.max(1200, lines[i + 1]!.timeMs - line.timeMs))
+        : 6000;
+      const dur = line.duration ?? gap;
+      const perToken = dur / tokens.length;
+      map.set(i, tokens.map((t, j) => ({
+        text: t,
+        startMs: line.timeMs + j * perToken,
+        duration: perToken,
+      })));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, settings.highlightStyle]);
 
   const playingRef = useRef(playing);
   playingRef.current = playing;
@@ -477,7 +516,7 @@ export function LyricsLayer({
         el.classList.toggle('is-current', fl.role === 'current');
 
         // 逐字高亮（仅 current；--wp 按需写）
-        const lineWords = line?.words && fl.role === 'current' ? line.words : undefined;
+        const lineWords = (fl.role === 'current') ? (line?.words?.length ? line.words : pseudoWordsMap.get(lineIdx)) : undefined;
         if (lineWords?.length) {
           for (let wi = 0; wi < lineWords.length; wi++) {
             const w = lineWords[wi]!;
@@ -563,13 +602,16 @@ export function LyricsLayer({
       {activeKeys.map((lineIdx) => {
         const line = lines[lineIdx];
         if (!line) return null;
-        const useWords = !!line.words?.length;
-        const words = useWords
+        const pseudoWords = pseudoWordsMap.get(lineIdx);
+        const hasRealWords = !!line.words?.length;
+        const words = hasRealWords
           ? line.words!
-          : line.text
-            ? [{ text: line.text, startMs: line.timeMs, duration: line.duration || 4000 }]
-            : [];
-        const whole = !useWords && !!line.text;
+          : pseudoWords
+            ? pseudoWords
+            : line.text
+              ? [{ text: line.text, startMs: line.timeMs, duration: line.duration || 4000 }]
+              : [];
+        const whole = !hasRealWords && !pseudoWords && !!line.text;
         return (
           <span
             key={lineIdx}

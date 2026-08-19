@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-08-19 — float 模式 LRC 伪逐字拆分
+
+**目标**
+
+float 模式 + LRC 行级歌词时，上浮发光特效整行一起变、看不出逐字推进。修复后 float 模式为 LRC 行生成伪逐字拆分，sweep 模式和 YRC/QRC 完全不受影响。
+
+**改动**
+
+- `src/components/LyricsLayer.tsx`：
+  - 新增 `pseudoWordsMap`（useMemo），仅 `highlightStyle === 'float'` 时生成；sweep 模式返回空 Map → 走原有 whole-line 回退路径，行为零变化。
+  - 分词策略：CJK 逐字、Latin 按空格分词（空格不作独立 token），行时长由下一行 timeMs 差值推算。
+  - 渲染区根据 `pseudoWordsMap` 决定创建逐字 span 或整行 span。
+  - 动画帧 per-word 路径优先取 `line.words`（真实 YRC/QRC），其次取 `pseudoWordsMap`（伪逐字），`--wp`/`--feather` 逻辑不变。
+
+**验证**
+
+- `pnpm build`（tsc + vite）通过。
+- `pnpm check:arch` 通过。
+- `pnpm qa:backend` 全部通过。
+- 四种组合行为：sweep+LRC / sweep+YRC / float+LRC / float+YRC 互不影响。
+
+
 ## 2026-08-19 — 迁移交接文档：HANDOFF + LYRICS_SYSTEM + 待办更新
 
 **目标**
