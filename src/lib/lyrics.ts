@@ -176,6 +176,42 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
   return out.sort((a, b) => a.timeMs - b.timeMs);
 }
 
+/**
+ * 将逐字歌词的 word text 与 LRC 行文本对齐，确保英文空格不丢失。
+ * 当 YRC/QRC 的 word text 被拼接为连续字符串时，
+ * 按 LRC 文本的空格位置拆分/重组 words，并按字符比例分配 YRC 时间戳。
+ * 仅在 word 拼接与 LRC text（去空格）一致但空格位置不同时生效。
+ */
+export function alignWordsToText(lines: LyricLineUI[]): LyricLineUI[] {
+  return lines.map((line) => {
+    if (!line.words?.length || !line.text) return line;
+
+    const wordsConcat = line.words.map((w) => w.text).join("");
+    const lrcNoSpace = line.text.replace(/\s/g, "");
+
+    if (wordsConcat !== lrcNoSpace) return line;
+    if (wordsConcat === line.text) return line;
+
+    const lrcWords = line.text.split(/\s+/);
+    const totalWordDur = line.words.reduce((s, w) => s + w.duration, 0);
+    const dur = line.duration || totalWordDur || 4000;
+
+    const newWords: LyricWordUI[] = [];
+    let charOffset = 0;
+
+    for (const lrcWord of lrcWords) {
+      if (!lrcWord) continue;
+      const wordLen = lrcWord.length;
+      const startMs = line.timeMs + dur * (charOffset / wordsConcat.length);
+      const duration = dur * (wordLen / wordsConcat.length);
+      newWords.push({ text: lrcWord, startMs, duration });
+      charOffset += wordLen;
+    }
+
+    return { ...line, words: newWords };
+  });
+}
+
 /** 中/日文歌词“配料表”行（作词/作曲/编曲/演唱/词:/曲:/歌詞/訳詞…）。 */
 const CREDIT_CN =
   /^(作词|作曲|编曲|作詞|作曲|歌詞|訳詞|制作人?|制作|演唱|原唱|翻唱|混音|录音|和声|合声|监制|出品|发行|企划|文案|封面|设计|导演|词曲|词|曲|吉他|贝斯|鼓手?|键盘|弦乐|母带|后期|编辑|版权|配唱|配乐|统筹|混录|母带处理|音乐制作|录音室|发行公司|版权方|词曲版权|录音版权|词曲唱)\s*[:：]/;

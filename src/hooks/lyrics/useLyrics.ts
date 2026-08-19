@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { hasDesktopAPI, toBackendTrack } from '../../lib/playlist/ipcClient';
-import { filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
+import { alignWordsToText, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
 import type { LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
 
@@ -26,7 +26,7 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
   const src = data as { yrc?: unknown; qrc?: unknown };
   const yrc = typeof src.yrc === 'string' ? src.yrc : '';
   const qrc = typeof src.qrc === 'string' ? src.qrc : '';
-  return filterCreditLines(mergeWordLyrics(out, yrc || qrc), title, artist);
+  return filterCreditLines(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), title, artist);
 }
 
 function loadLyricSettings(): LyricVisualSettings {

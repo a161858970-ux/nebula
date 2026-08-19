@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-08-19 — seek 歌词消失修复 + 英文歌词空格丢失修复
+
+**目标**
+
+1. 修复 seek（拖动进度条）后部分歌词行永久消失的 bug。
+2. 修复 YRC/QRC 英文歌词偶尔变成无空格连续字母（如 wearetheworld）的 bug。
+
+**改动**
+
+1. **Bug1 - consumedRef seek 清理**（src/components/LyricsLayer.tsx）：
+   - 原逻辑仅在回退 >1.5s 时清空 consumedRef，导致小幅 seek 后已飞出的句无法重新入场。
+   - 新逻辑：任意方向 seek >200ms 即清除时间戳在新位置之后的 consumed 条目；回退 >1.5s 仍做完全清空。
+   - 向前 seek 时不受影响（未来句本就不会在 consumed 中）。
+
+2. **Bug2 - 英文歌词空格对齐**（src/lib/lyrics.ts + src/hooks/lyrics/useLyrics.ts）：
+   - 新增 alignWordsToText()：在 mergeWordLyrics 之后调用，逐行检查 YRC word 拼接文本与 LRC text 是否一致（忽略空格）。
+   - 不一致时（如 word 被拼为连续字符串而 LRC text 含空格），按 LRC text 的空格位置拆分 words，并按字符比例分配 YRC 时间戳。
+   - 仅在拼接一致但空格位置不同时生效，CJK 逐字和正常 Latin 分词不受影响。
+   - 架构预留：函数为纯转换层，后续新增歌词来源（酷狗/汽水/Spotify 等）只需在 mergeWordLyrics 后继续调用即可。
+
+**验证**
+
+- pnpm build（tsc + vite）通过。
+
+
 ## 2026-08-19 — float 模式 LRC 伪逐字拆分
 
 **目标**

@@ -396,7 +396,18 @@ export function LyricsLayer({
         smoothTRef.current = t;
         simTRef.current += dt;
       }
-      if (t < lastTRef.current - 1500) consumedRef.current.clear();
+      // seek 检测：清除新位置之后的 consumed 条目，让未来句可重新入场；同时保留旧的大跳回退保护
+      if (Math.abs(t - lastTRef.current) > 200) {
+        // 大幅回退（>1.5s）：完全清空
+        if (t < lastTRef.current - 1500) {
+          consumedRef.current.clear();
+        } else {
+          // 任意方向 seek（>200ms）：仅清除时间戳在新位置之后的条目
+          for (const idx of consumedRef.current) {
+            if (lines[idx] && lines[idx]!.timeMs > t) consumedRef.current.delete(idx);
+          }
+        }
+      }
       lastTRef.current = t;
 
       const active = flights.current;
