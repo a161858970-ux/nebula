@@ -140,8 +140,8 @@ export class KugouAdapter implements PlatformAdapter {
 
   private getCacheKey(hash: string): string {
     const rec = this.cookies.get('kugou');
-    const userid = this.extractCookieValue(rec?.cookies, 'userid') || '0';
-    const token = rec?.token || '';
+    const userid = this.extractCookieValue(rec?.cookies, 'KugooID') || '0';
+    const token = this.extractCookieValue(rec?.cookies, 't') || '';
     return `${userid}:${token}:${hash}`;
   }
 
@@ -169,7 +169,7 @@ export class KugouAdapter implements PlatformAdapter {
     const cookie = this.cookies.getHeader('kugou') || '';
     const rec = this.cookies.get('kugou');
     const userid = this.extractCookieValue(rec?.cookies, 'userid') || '';
-    const token = rec?.token || '';
+    const token = this.extractCookieValue(rec?.cookies, 't') || '';
     const mid = this.extractCookieValue(cookie, 'kg_mid') || String(Math.floor(Math.random() * 1e10));
     const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
 
@@ -353,8 +353,8 @@ export class KugouAdapter implements PlatformAdapter {
   async fetchMyPlaylists(): Promise<PlaylistSummary[]> {
     const rec = this.cookies.get('kugou');
     const cookie = rec?.cookies || '';
-    const userid = this.extractCookieValue(cookie, 'userid');
-    const token = rec?.token || this.extractCookieValue(cookie, 'token');
+    const userid = this.extractCookieValue(cookie, 'KugooID');
+    const token = this.extractCookieValue(cookie, 't');
     if (!userid || !token) return [];
     try {
       const params: Record<string, string> = {
@@ -391,8 +391,8 @@ export class KugouAdapter implements PlatformAdapter {
   async fetchPlaylistTracks(listId: string): Promise<Track[]> {
     const rec = this.cookies.get('kugou');
     const cookie = rec?.cookies || '';
-    const userid = this.extractCookieValue(cookie, 'userid');
-    const token = rec?.token || this.extractCookieValue(cookie, 'token');
+    const userid = this.extractCookieValue(cookie, 'KugooID');
+    const token = this.extractCookieValue(cookie, 't');
     if (!userid || !token) return [];
     try {
       const params: Record<string, string> = {

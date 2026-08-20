@@ -17,12 +17,14 @@ export { QqLogin, hash33 } from './qqLogin';
 
 export function createKugouLoginAdapter(kugouLogin: {
   getAccount: () => Promise<AccountInfo | null>;
+  getMyPlaylists?: () => Promise<PlaylistSummary[]>;
 }): LoginAdapter {
   return {
     platform: 'kugou',
     name: '酷狗音乐',
     kind: 'window',
     getAccount: () => kugouLogin.getAccount(),
+    getMyPlaylists: kugouLogin.getMyPlaylists,
     unavailableReason: undefined,
   };
 }
