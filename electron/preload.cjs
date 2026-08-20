@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   spotifyLoginStart: () => ipcRenderer.invoke('nebula:login:spotify:start'),
   spotifyLoginStatus: () => ipcRenderer.invoke('nebula:login:spotify:status'),
   qqLoginWindow: () => ipcRenderer.invoke('nebula:login:qq:window'),
+  kugouLoginWindow: () => ipcRenderer.invoke('nebula:login:kugou:window'),
   openLocalDirectory: () => ipcRenderer.invoke('nebula:open-local-directory'),
   openExternal: (url) => ipcRenderer.invoke('nebula:open-external', { url }),
   wallpaperList: () => ipcRenderer.invoke('nebula:wallpaper:list'),

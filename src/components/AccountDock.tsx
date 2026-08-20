@@ -351,7 +351,19 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
     if (!window.nebulaAPI) return;
     setBusy(true);
     try {
-      const r = await window.nebulaAPI.setCookie('kugou', cookieText.trim());
+      // 支持多种格式：完整 cookie 字符串、单行 name=value、多行 name\nvalue
+      let raw = cookieText.trim();
+      // 如果包含换行，尝试按行解析为 name=value 对
+      if (raw.includes('\n') && !raw.includes(';')) {
+        raw = raw.split('\n').filter(l => l.includes('=')).join('; ');
+      }
+      // 如果不包含 ; 也不包含 = ，可能是单独的值，提示用户
+      if (!raw.includes('=')) {
+        setStatus('请输入完整 Cookie（如 kg_mid=xxx; kg_dfid=yyy; userid=123; token=abc）');
+        setBusy(false);
+        return;
+      }
+      const r = await window.nebulaAPI.setCookie('kugou', raw);
       if (!r.ok) {
         setStatus(`Cookie 无效：${r.error}`);
         return;
