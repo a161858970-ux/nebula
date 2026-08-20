@@ -12,16 +12,39 @@ export class KugouLogin {
   async getAccount(): Promise<AccountInfo | null> {
     const rec = this.cookies.get('kugou');
     if (!rec?.cookies) return null;
-    const userid = this.extractValue(rec.cookies, 'userid');
-    const token = rec.token || this.extractValue(rec.cookies, 'token');
-    if (!userid || !token) return null;
-    const nickname = this.extractValue(rec.cookies, 'NickName') || rec.nickname || '';
-    const avatar = this.extractValue(rec.cookies, 'Pic') || '';
+    const cookie = rec.cookies;
+
+    // 酷狗 cookie 字段与预期不同，按实际字段名提取：
+    // - KugooID: 用户 ID
+    // - t: token/时间戳
+    // - UserName: 用户名
+    // - KuGoo: URL 编码复合值（含 KugooID/NickName/Pic）
+    // - mid: 机器 ID
+    const kugouId = this.extractValue(cookie, 'KugooID');
+    // const token = rec.token || this.extractValue(cookie, 't');  // reserved for API auth
+    if (!kugouId) return null;
+
+    // 从 KuGoo 复合值或 UserName 提取昵称
+    let nickname = this.extractValue(cookie, 'UserName') || rec.nickname || '';
+    let avatar = '';
+    const kuGoo = this.extractValue(cookie, 'KuGoo');
+    if (kuGoo) {
+      try {
+        const decoded = decodeURIComponent(kuGoo);
+        const parts = Object.fromEntries(decoded.split('&').map(p => p.split('=')));
+        if (parts.NickName) nickname = parts.NickName;
+        if (parts.Pic) avatar = parts.Pic;
+      } catch { /* 解析失败用默认值 */ }
+    }
+
     return {
       loggedIn: true,
-      userId: userid,
-      nickname: decodeURIComponent(nickname),
-      avatarUrl: avatar ? decodeURIComponent(avatar) : '',
+      userId: kugouId,
+      nickname: nickname || '酷狗用户',
+      avatarUrl: avatar,
+      vipType: 0,
+      isVip: false,
+      isSvip: false,
     };
   }
 

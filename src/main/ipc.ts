@@ -123,12 +123,16 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   });
 
   safe('nebula:cookie:set', async ({ platform, cookie, token, nickname }: { platform: Platform; cookie: string; token?: string; nickname?: string }) => {
+    console.log('[IPC] cookie:set platform=' + platform + ' rawLength=' + (cookie?.length ?? 0) + ' first100=' + (cookie?.substring(0, 100) ?? ''));
     const normalized = normalizeCookieHeader(cookie);
+    console.log('[IPC] cookie:set normalizedLength=' + normalized.length + ' first100=' + normalized.substring(0, 100));
     const validation = validatePlatformCookie(platform, normalized);
     if (!validation.ok) {
+      console.log('[IPC] cookie:set VALIDATION FAILED:', validation.error);
       throw new Error(validation.error);
     }
     deps.cookies.set(platform, normalized, token, nickname);
+    console.log('[IPC] cookie:set SUCCESS for', platform);
     return true;
   });
   safe('nebula:cookie:get', async ({ platform }: { platform: Platform }) => deps.cookies.get(platform) ?? null);
