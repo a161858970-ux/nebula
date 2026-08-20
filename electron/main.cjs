@@ -268,12 +268,14 @@ function createKugouLoginWindow(cookies, kugouLogin) {
 
       // 收集所有 cookie
       const list = await ses.cookies.get({});
-      const storeCookies = list.map(c => `${c.name}=${c.value}`).join('; ');
-      // 合并 Set-Cookie 捕获的
-      const capturedStr = Array.from(capturedCookies.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
-      // 合并（captured 优先，因为可能有 httpOnly 字段捕获不到）
-      const finalParts = [storeCookies, capturedStr].filter(Boolean);
-      const finalRaw = finalParts.join('; ');
+      // Use ||| delimiter to safely join cookies (KuGoo value contains & separators)
+      const storeCookies = list.map(c => `${c.name}=${c.value}`).join('|||');
+      const storeNames = new Set(list.map(c => c.name));
+      const capturedExtra = Array.from(capturedCookies.entries())
+        .filter(([k]) => !storeNames.has(k))
+        .map(([k, v]) => `${k}=${v}`).join('|||');
+      const finalParts = [storeCookies, capturedExtra].filter(Boolean);
+      const finalRaw = finalParts.join('|||');
 
       console.log('[酷狗登录] 保存 cookie 字段:', [...new Set([...list.map(c => c.name), ...capturedCookies.keys()])].join(', '));
       cookies.set('kugou', finalRaw, undefined, '酷狗音乐');

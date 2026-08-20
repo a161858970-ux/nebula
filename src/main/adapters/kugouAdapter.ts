@@ -220,8 +220,8 @@ export class KugouAdapter implements PlatformAdapter {
       IsFreePart: '0', cdnBackup: '1', module: '',
     };
     params.key = md5(hash + SIGN_KEY_SALT + params.appid + mid + (userid || '0'));
-    params.signature = h5Sign(params);
-    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    const signature = h5Sign(params);
+    const qs = Object.entries({...params, signature}).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
     const data = await this.http.requestJson<{
       status?: number;
       url?: string;
@@ -366,13 +366,13 @@ export class KugouAdapter implements PlatformAdapter {
         dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
         appid: '1014', token, userid,
       };
-      params.signature = h5Sign(params);
+      const signature = h5Sign(params);
       const data = await this.http.requestJson<{
         data?: { info?: Array<{ listid: string; specialname: string; imgurl: string; songcount: number }> };
       }>('https://gateway.kugou.com/v7/get_all_list', {
         platform: 'kugou',
         method: 'POST',
-        form: { ...params, userid, token, total_ver: '979', type: '2', page: '1', pagesize: '100', plat: '1' },
+        form: { ...params, signature, userid, token, total_ver: '979', type: '2', page: '1', pagesize: '100', plat: '1' },
         headers: { 'x-router': 'cloudlist.service.kugou.com' },
       });
       return (data?.data?.info ?? []).map((item) => ({
@@ -404,13 +404,13 @@ export class KugouAdapter implements PlatformAdapter {
         dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
         appid: '1014', token, userid,
       };
-      params.signature = h5Sign(params);
+      const signature = h5Sign(params);
       const data = await this.http.requestJson<{
         data?: { info?: Array<Record<string, any>> };
       }>('https://gateway.kugou.com/v4/get_list_all_file', {
         platform: 'kugou',
         method: 'POST',
-        form: { ...params, listid: listId, userid, area_code: '1', show_relate_goods: '0', pagesize: '100', allplatform: '1', show_cover: '1', type: '0', token, page: '1' },
+        form: { ...params, signature, listid: listId, userid, area_code: '1', show_relate_goods: '0', pagesize: '100', allplatform: '1', show_cover: '1', type: '0', token, page: '1' },
         headers: { 'x-router': 'cloudlist.service.kugou.com' },
       });
       return (data?.data?.info ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);

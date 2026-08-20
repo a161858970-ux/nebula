@@ -5,6 +5,15 @@ import type { AccountInfo } from '../types';
  * 酷狗登录：Electron BrowserWindow 加载官方网页，轮询 cookie 提取登录态。
  * 成功标准：cookie 中包含 userid + token。
  */
+/** 解码 KuGoo 复合值：处理 %uXXXX Unicode 编码 + 标准 URI 编码 */
+function decodeKuGoo(raw: string): string {
+  return decodeURIComponent(
+    raw.replace(/%u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+  );
+}
+
 export class KugouLogin {
   constructor(private cookies: CookieStore) {}
 
@@ -30,7 +39,7 @@ export class KugouLogin {
     const kuGoo = this.extractValue(cookie, 'KuGoo');
     if (kuGoo) {
       try {
-        const decoded = decodeURIComponent(kuGoo);
+        const decoded = decodeKuGoo(kuGoo);
         const parts = Object.fromEntries(decoded.split('&').map(p => p.split('=')));
         if (parts.NickName) nickname = parts.NickName;
         if (parts.Pic) avatar = parts.Pic;

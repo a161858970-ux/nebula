@@ -328,6 +328,8 @@ function PlatformLogin({
 function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [cookieMode, setCookieMode] = useState(false);
+  const [cookieText, setCookieText] = useState('');
 
   const openWindow = useCallback(async () => {
     if (!window.nebulaAPI) return;
@@ -375,10 +377,8 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
     } finally {
       setBusy(false);
     }
-  }, [onSuccess]);
+  }, [onSuccess, cookieText]);
 
-  const [cookieMode, setCookieMode] = useState(false);
-  const [cookieText, setCookieText] = useState('');
 
   return (
     <div className="pf-flow">

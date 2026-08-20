@@ -29,7 +29,7 @@ const COOKIE_ATTRS = new Set([
 export function normalizeCookieHeader(input: string): string {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const part of String(input ?? '').split(';')) {
+  for (const part of String(input ?? '').split(/;\s*(?=\w+=)/)) {
     const seg = part.trim();
     if (!seg) continue;
     const eq = seg.indexOf('=');
@@ -126,7 +126,13 @@ export class CookieStore {
 
   /** 生成可直接写入请求头的 Cookie 字符串。 */
   getHeader(platform: Platform): string | undefined {
-    return this.data[platform]?.cookies;
+    const raw = this.data[platform]?.cookies;
+    if (!raw) return undefined;
+    // ||| delimiter used for KuGoo-safe storage (KuGoo value contains & separators)
+    if (raw.includes('|||')) {
+      return raw.split('|||').join('; ');
+    }
+    return raw;
   }
 
   has(platform: Platform): boolean {
