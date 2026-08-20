@@ -180,4 +180,8 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     if (!deps.qqLoginWindow) throw new Error('QQ 登录窗口不可用');
     return deps.qqLoginWindow();
   });
+  safe('nebula:login:kugou:window', async () => {
+    if (!deps.kugouLoginWindow) throw new Error('酷狗登录窗口不可用');
+    return deps.kugouLoginWindow();
+  });
 }
