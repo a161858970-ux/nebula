@@ -351,6 +351,7 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
     if (!window.nebulaAPI) return;
     setBusy(true);
     try {
+      console.log('[KugouLogin] importCookie raw.length=' + cookieText.trim().length + ' includes=:' + cookieText.includes('='));
       let raw = cookieText.trim();
       // 支持多行 name=value 格式（每行一个 cookie）
       if (raw.includes('\n') && !raw.includes(';')) {

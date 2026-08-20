@@ -491,7 +491,7 @@ app.whenReady().then(() => {
       getAccount: () => qqLogin.getAccount(),
       getMyPlaylists: () => qqLogin.getMyPlaylists(),
     },
-    kugou: createKugouLoginAdapter({ ...kugouLogin, getMyPlaylists: () => adapters.kugou.fetchMyPlaylists() }),
+    kugou: createKugouLoginAdapter({ getAccount: () => kugouLogin.getAccount(), getMyPlaylists: () => adapters.kugou.fetchMyPlaylists() }),
     qishui: qishuiLoginAdapter,
     spotify: {
       platform: 'spotify',
