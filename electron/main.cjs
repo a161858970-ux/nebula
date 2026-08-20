@@ -269,12 +269,12 @@ function createKugouLoginWindow(cookies, kugouLogin) {
       // 收集所有 cookie
       const list = await ses.cookies.get({});
       // Use ||| delimiter to safely join cookies (KuGoo value contains & separators)
+      // capturedCookies may have fuller values (e.g. full KuGoo with NickName) than session store
       const storeCookies = list.map(c => `${c.name}=${c.value}`).join('|||');
-      const storeNames = new Set(list.map(c => c.name));
-      const capturedExtra = Array.from(capturedCookies.entries())
-        .filter(([k]) => !storeNames.has(k))
+      const capturedAll = Array.from(capturedCookies.entries())
         .map(([k, v]) => `${k}=${v}`).join('|||');
-      const finalParts = [storeCookies, capturedExtra].filter(Boolean);
+      const finalParts = [storeCookies, capturedAll].filter(Boolean);
+      // normalizeCookieHeader deduplicates by name (last wins), so captured full values overwrite truncated ones
       const finalRaw = finalParts.join('|||');
 
       console.log('[酷狗登录] 保存 cookie 字段:', [...new Set([...list.map(c => c.name), ...capturedCookies.keys()])].join(', '));

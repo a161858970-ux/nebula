@@ -375,7 +375,18 @@ export class KugouAdapter implements PlatformAdapter {
         form: { ...params, signature, userid, token, total_ver: '979', type: '2', page: '1', pagesize: '100', plat: '1' },
         headers: { 'x-router': 'cloudlist.service.kugou.com' },
       });
-      return (data?.data?.info ?? []).map((item) => ({
+      const items = data?.data?.info ?? [];
+      console.log('[KugouAdapter] fetchMyPlaylists:', JSON.stringify({
+        status: (data as any)?.status, errcode: (data as any)?.errcode,
+        errmsg: (data as any)?.errmsg, itemCount: items.length,
+        userid, hasToken: !!token,
+        cookieKugouId: this.extractCookieValue(cookie, 'KugooID'),
+        cookieToken: this.extractCookieValue(cookie, 't') ? 'yes' : 'no',
+      }));
+      if (items.length === 0) {
+        console.log('[KugouAdapter] fetchMyPlaylists raw:', JSON.stringify(data).substring(0, 500));
+      }
+      return items.map((item) => ({
         id: item.listid,
         name: item.specialname,
         cover: item.imgurl || '',
