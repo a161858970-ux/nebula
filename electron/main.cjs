@@ -16,8 +16,9 @@ const {
   LyricService,
   NeteaseLogin,
   QqLogin,
+  KugouLogin,
   QqRightsService,
-  kugouLoginAdapter,
+  createKugouLoginAdapter,
   qishuiLoginAdapter,
   AudioProxy,
   LyricCache,
@@ -174,6 +175,67 @@ function createQqLoginWindow(cookies) {
         /* keep polling */
       }
     }, 2000);
+
+    win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
+  });
+}
+
+function createKugouLoginWindow(cookies, kugouLogin) {
+  return new Promise(async (resolve) => {
+    const partition = 'persist:kugou-login';
+    const ses = session.fromPartition(partition);
+    try {
+      await ses.clearStorageData({ storages: ['cookies', 'localstorage'] });
+    } catch (err) {
+      console.warn('[酷狗登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
+    }
+    const win = new BrowserWindow({
+      width: 560,
+      height: 800,
+      backgroundColor: '#0b0c16',
+      webPreferences: {
+        partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    win.setTitle('酷狗音乐登录（官方页面）');
+    win.loadURL('https://www.kugou.com/');
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      resolve(result);
+    };
+
+    // 每 1.2s 读取 partition cookie，出现 userid + token 即视为登录成功
+    const timer = setInterval(async () => {
+      try {
+        const list = await ses.cookies.get({});
+        const raw = list.map((c) => `${c.name}=${c.value}`).join('; ');
+        // 检查关键字段
+        const hasUserid = /userid=\d+/.test(raw);
+        const hasToken = /token=\w+/.test(raw);
+        if (hasUserid && hasToken) {
+          // 登录成功，warmup 导航触发 token 签发
+          try {
+            win.loadURL('https://www.kugou.com/newuc/user/uc/type=edit');
+          } catch { /* ignore */ }
+          // 等待 2s 让 warmup 完成
+          await new Promise((r) => setTimeout(r, 2000));
+          // 重新读取 cookie
+          const finalList = await ses.cookies.get({});
+          const finalRaw = finalList.map((c) => `${c.name}=${c.value}`).join('; ');
+          cookies.set('kugou', finalRaw, undefined, '酷狗音乐');
+          if (!win.isDestroyed()) win.close();
+          finish({ ok: true, message: '酷狗音乐登录成功' });
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 1200);
 
     win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
   });
@@ -362,6 +424,7 @@ app.whenReady().then(() => {
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
   const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
+  const kugouLogin = new KugouLogin(cookies);
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -384,7 +447,7 @@ app.whenReady().then(() => {
       getAccount: () => qqLogin.getAccount(),
       getMyPlaylists: () => qqLogin.getMyPlaylists(),
     },
-    kugou: kugouLoginAdapter,
+    kugou: createKugouLoginAdapter(kugouLogin),
     qishui: qishuiLoginAdapter,
     spotify: {
       platform: 'spotify',
@@ -408,6 +471,7 @@ app.whenReady().then(() => {
     audioProxy,
     spotifyOAuth: createSpotifyOAuth(cookies),
     qqLoginWindow: () => createQqLoginWindow(cookies),
+    kugouLoginWindow: () => createKugouLoginWindow(cookies, kugouLogin),
     wallpaperLibrary,
     // 退出登录时同步清空 QQ 官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。

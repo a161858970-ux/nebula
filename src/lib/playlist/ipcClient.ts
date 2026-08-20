@@ -148,6 +148,7 @@ export interface DesktopApi {
   spotifyLoginStart: () => IpcResult<boolean>;
   spotifyLoginStatus: () => IpcResult<boolean>;
   qqLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
+  kugouLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
   openExternal: (url: string) => IpcResult<boolean>;
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;

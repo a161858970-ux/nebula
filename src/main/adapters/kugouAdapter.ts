@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
-import type { Lyric, Playlist, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
 
@@ -347,6 +347,77 @@ export class KugouAdapter implements PlatformAdapter {
     if (vip.isVip) base.push({ level: 'flac', label: '无损 FLAC', needsVip: true });
     if (vip.isSvip) base.push({ level: 'hires', label: 'Hi-Res', needsSvip: true });
     return base;
+  }
+
+  /** 用户歌单列表（需登录） */
+  async fetchMyPlaylists(): Promise<PlaylistSummary[]> {
+    const rec = this.cookies.get('kugou');
+    const cookie = rec?.cookies || '';
+    const userid = this.extractCookieValue(cookie, 'userid');
+    const token = rec?.token || this.extractCookieValue(cookie, 'token');
+    if (!userid || !token) return [];
+    try {
+      const params: Record<string, string> = {
+        srcappid: String(H5_SRC_APPID),
+        clientver: String(H5_CLIENTVER),
+        clienttime: String(Date.now()),
+        mid: this.extractCookieValue(cookie, 'kg_mid') || '0',
+        uuid: this.extractCookieValue(cookie, 'kg_mid') || '0',
+        dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
+        appid: '1014', token, userid,
+      };
+      params.signature = h5Sign(params);
+      const data = await this.http.requestJson<{
+        data?: { info?: Array<{ listid: string; specialname: string; imgurl: string; songcount: number }> };
+      }>('https://gateway.kugou.com/v7/get_all_list', {
+        platform: 'kugou',
+        method: 'POST',
+        form: { ...params, userid, token, total_ver: '979', type: '2', page: '1', pagesize: '100', plat: '1' },
+        headers: { 'x-router': 'cloudlist.service.kugou.com' },
+      });
+      return (data?.data?.info ?? []).map((item) => ({
+        id: item.listid,
+        name: item.specialname,
+        cover: item.imgurl || '',
+        trackCount: item.songcount || 0,
+      }));
+    } catch (err) {
+      console.warn('[KugouAdapter] 用户歌单获取失败:', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  /** 歌单内歌曲（需登录） */
+  async fetchPlaylistTracks(listId: string): Promise<Track[]> {
+    const rec = this.cookies.get('kugou');
+    const cookie = rec?.cookies || '';
+    const userid = this.extractCookieValue(cookie, 'userid');
+    const token = rec?.token || this.extractCookieValue(cookie, 'token');
+    if (!userid || !token) return [];
+    try {
+      const params: Record<string, string> = {
+        srcappid: String(H5_SRC_APPID),
+        clientver: String(H5_CLIENTVER),
+        clienttime: String(Date.now()),
+        mid: this.extractCookieValue(cookie, 'kg_mid') || '0',
+        uuid: this.extractCookieValue(cookie, 'kg_mid') || '0',
+        dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
+        appid: '1014', token, userid,
+      };
+      params.signature = h5Sign(params);
+      const data = await this.http.requestJson<{
+        data?: { info?: Array<Record<string, any>> };
+      }>('https://gateway.kugou.com/v4/get_list_all_file', {
+        platform: 'kugou',
+        method: 'POST',
+        form: { ...params, listid: listId, userid, area_code: '1', show_relate_goods: '0', pagesize: '100', allplatform: '1', show_cover: '1', type: '0', token, page: '1' },
+        headers: { 'x-router': 'cloudlist.service.kugou.com' },
+      });
+      return (data?.data?.info ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
+    } catch (err) {
+      console.warn('[KugouAdapter] 歌单歌曲获取失败:', err instanceof Error ? err.message : err);
+      return [];
+    }
   }
 
   /**

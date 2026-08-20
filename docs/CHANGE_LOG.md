@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-08-20 — 阶段 2：酷狗登录 + 用户歌单
+
+**目标**
+
+1. 酷狗 Electron BrowserWindow 网页登录 + cookie 自动提取。
+2. 酷狗用户歌单获取（get_all_list + get_list_all_file）。
+3. 前端 AccountDock 支持酷狗登录入口。
+
+**改动**
+
+- src/main/login/kugouLogin.ts（新建）：KugouLogin 类，getAccount 从 cookie 提取登录态。
+- src/main/login/index.ts：LoginAdapter kind 增加 window；createKugouLoginAdapter 替换占位符。
+- electron/main.cjs：createKugouLoginWindow（BrowserWindow + partition 轮询 + warmup 导航）。
+- src/main/ipc.ts：nebula:login:kugou-window IPC handler + kugou-playlists/playlist-tracks。
+- src/lib/playlist/ipcClient.ts：kugouLoginWindow 类型 + 实现。
+- src/components/AccountDock.tsx：KugouLogin 组件（官方登录页 + 粘贴 Cookie）。
+- src/main/adapters/kugouAdapter.ts：fetchMyPlaylists + fetchPlaylistTracks（H5 签名 + gateway API）。
+
+**验证**
+
+- pnpm build（tsc + vite）通过。
+- pnpm qa:backend 全部通过（24/24）。
+
+
 ## 2026-08-20 — 阶段 1：酷狗四路取链 + VIP 探测
 
 **目标**

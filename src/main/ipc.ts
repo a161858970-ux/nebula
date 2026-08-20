@@ -25,6 +25,7 @@ export interface IpcDeps {
   audioProxy: AudioProxy;
   spotifyOAuth?: { start: () => Promise<boolean>; status: () => boolean };
   qqLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
+  kugouLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   /** Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions). */
   onCookieClear?: (platform: Platform) => Promise<void> | void;
   wallpaperLibrary?: WallpaperLibrary;

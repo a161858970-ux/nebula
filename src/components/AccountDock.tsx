@@ -324,8 +324,88 @@ function PlatformLogin({
       </div>
     );
   }
+/** 酷狗音乐：官方登录页（BrowserWindow）。 */
+function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const openWindow = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    setBusy(true);
+    setStatus('已打开官方登录页，请在窗口内登录酷狗账号…');
+    try {
+      const r = await window.nebulaAPI.kugouLoginWindow();
+      const data = r.ok ? r.data : null;
+      if (data?.ok) {
+        setStatus(data.message ?? '登录成功');
+        onSuccess();
+      } else {
+        setStatus(data?.error ?? '登录窗口已关闭');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [onSuccess]);
+
+  const importCookie = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    setBusy(true);
+    try {
+      const r = await window.nebulaAPI.setCookie('kugou', cookieText.trim());
+      if (!r.ok) {
+        setStatus(`Cookie 无效：${r.error}`);
+        return;
+      }
+      setCookieText('');
+      onSuccess();
+    } catch (err) {
+      setStatus(`导入失败：${err instanceof Error ? err.message : err}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [onSuccess]);
+
+  const [cookieMode, setCookieMode] = useState(false);
+  const [cookieText, setCookieText] = useState('');
+
+  return (
+    <div className="pf-flow">
+      {!cookieMode ? (
+        <>
+          <button className="glass-btn" disabled={busy} onClick={openWindow}>
+            {busy ? '等待确认…' : '打开酷狗登录页'}
+          </button>
+          <button className="glass-btn is-ghost" onClick={() => setCookieMode(true)}>
+            粘贴 Cookie 登录
+          </button>
+        </>
+      ) : (
+        <>
+          <textarea
+            className="pf-cookie-input"
+            placeholder="粘贴酷狗 Cookie（F12 → Network → 任意请求 → Cookie 头）"
+            rows={3}
+            value={cookieText}
+            onChange={(e) => setCookieText(e.target.value)}
+          />
+          <div className="pf-cookie-actions">
+            <button className="glass-btn" disabled={busy || !cookieText.trim()} onClick={importCookie}>
+              确认导入
+            </button>
+            <button className="glass-btn is-ghost" onClick={() => setCookieMode(false)}>
+              返回
+            </button>
+          </div>
+        </>
+      )}
+      {status && <div className="pf-status">{status}</div>}
+    </div>
+  );
+}
+
   if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
   if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
+  if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
   return <div className="pf-flow"><div className="pf-status">暂不支持该平台登录</div></div>;
 }
