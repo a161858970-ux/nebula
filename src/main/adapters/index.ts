@@ -5,6 +5,7 @@ import { NeteaseAdapter } from './neteaseAdapter';
 import { QqAdapter } from './qqAdapter';
 import { KugouAdapter } from './kugouAdapter';
 import { SpotifyAdapter } from './spotifyAdapter';
+import { QishuiAdapter } from './qishuiAdapter';
 
 export type AdapterMap = Record<Platform, PlatformAdapter>;
 
@@ -14,6 +15,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     qq: new QqAdapter(http, cookies),
     kugou: new KugouAdapter(http),
     spotify: new SpotifyAdapter(http, cookies),
+    qishui: new QishuiAdapter(http),
   };
 }
 
@@ -42,6 +44,10 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
   if (/open\.spotify\.com/.test(url)) {
     const id = url.match(/playlist\/([A-Za-z0-9]+)/i)?.[1];
     if (id) return { platform: 'spotify', id };
+  }
+  if (/qishui\.com/.test(url) || /douyin\.com/.test(url)) {
+    const id = url.match(/id=([\d]+)/i)?.[1] ?? url.match(/playlist\/([\d]+)/i)?.[1];
+    if (id) return { platform: 'qishui', id };
   }
   return null;
 }

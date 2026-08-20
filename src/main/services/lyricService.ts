@@ -98,7 +98,7 @@ export class LyricService {
   /** 主源失败 → 用 title+artist 到 QQ/酷狗搜索匹配并取歌词。 */
   private async fallbackLyric(track: Track): Promise<Lyric | null> {
     const keyword = `${track.title} ${track.artist}`.trim();
-    const sources = [this.adapters.qq, this.adapters.kugou];
+    const sources = [this.adapters.qq, this.adapters.kugou, this.adapters.qishui];
     for (const source of sources) {
       if (!source.searchSongs) continue;
       try {

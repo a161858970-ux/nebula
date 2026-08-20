@@ -1,6 +1,6 @@
 /** Unified data model shared by every platform adapter. */
 
-export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify';
+export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify' | 'qishui';
 
 export interface Track {
   /** Unified id (`${platform}:${sourceId}`, stable across platforms). */

@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-08-20 — 阶段 0：酷狗歌词链升级 + 汽水适配器骨架
+
+**目标**
+
+1. 酷狗歌词链从 krc.php 升级为 krcs 双接口（search -> download），支持逐字 LRC。
+2. 新增汽水音乐适配器骨架，实现免登录歌词（SEO + volcengine 双源兜底）。
+3. Platform 类型扩展 'qishui'，前端已有平台元数据预留。
+
+**改动**
+
+- src/main/types.ts：Platform 增加 'qishui'。
+- src/main/http.ts：PLATFORM_HEADERS 增加 qishui（Referer + LunaPC UA）。
+- src/main/adapters/kugouAdapter.ts：fetchLyric 改为 krcs 双接口为主、krc.php 为兜底，支持 base64 content 解码。
+- src/main/adapters/qishuiAdapter.ts（新建）：骨架适配器，fetchLyric 实现 SEO seo_track + volcengine 两源兜底。
+- src/main/adapters/index.ts：注册 QishuiAdapter，resolveAdapterByUrl 增加 qishui/douyin URL 识别。
+- src/main/services/lyricService.ts：fallbackLyric 增加 qishui 源。
+- src/main/login/index.ts：更新酷狗/汽水登录占位说明。
+- scripts/kugou-krcs-verify.mjs（新建）：酷狗 krcs + 汽水 SEO/volcengine 歌词验证脚本。
+
+**验证**
+
+- pnpm build（tsc + vite）通过。
+
+
 ## 2026-08-19 — seek 歌词消失修复 + 英文歌词空格丢失修复
 
 **目标**

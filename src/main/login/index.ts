@@ -18,12 +18,12 @@ export const kugouLoginAdapter: LoginAdapter = {
   platform: 'kugou',
   name: '酷狗音乐',
   kind: 'unavailable',
-  unavailableReason: '酷狗网页登录接口未公开且频繁变动，暂不支持账号登录；可用网易云/QQ/Spotify 登录',
+  unavailableReason: '酷狗登录需要 Electron 浏览器窗口（阶段 1 接入）；搜索/歌词/取链已可用',
 };
 
 export const qishuiLoginAdapter: LoginAdapter = {
   platform: 'qishui',
   name: '汽水音乐',
   kind: 'unavailable',
-  unavailableReason: '汽水音乐为字节系封闭平台，暂无公开登录/歌单 API，暂不支持',
+  unavailableReason: '汽水音乐登录需要签名引擎（阶段 2 接入）；歌词已支持免登录获取',
 };
