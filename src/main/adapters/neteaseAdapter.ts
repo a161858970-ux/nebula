@@ -99,7 +99,7 @@ export class NeteaseAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchSongUrl(songId: string, _albumId?: string, quality?: string): Promise<SongUrl | null> {
+  async fetchSongUrl(songId: string, _albumId?: string, quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
     const cookie = this.cookies.getHeader('netease') ?? '';
     const rights = await this.getRights();
     const allowed = this.allowedLevels(rights);

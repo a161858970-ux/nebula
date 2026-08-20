@@ -23,7 +23,7 @@ export class QishuiAdapter implements PlatformAdapter {
     return [];
   }
 
-  async fetchSongUrl(_songId: string, _albumId?: string, _quality?: string): Promise<SongUrl | null> {
+  async fetchSongUrl(_songId: string, _albumId?: string, _quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
     throw new Error('汽水取链功能暂未实现（需要登录态 + 音频解密，阶段 2 接入）');
   }
 

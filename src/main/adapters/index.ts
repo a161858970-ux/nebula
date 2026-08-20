@@ -13,7 +13,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
   return {
     netease: new NeteaseAdapter(http, cookies),
     qq: new QqAdapter(http, cookies),
-    kugou: new KugouAdapter(http),
+    kugou: new KugouAdapter(http, cookies),
     spotify: new SpotifyAdapter(http, cookies),
     qishui: new QishuiAdapter(http),
   };

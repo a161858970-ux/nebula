@@ -1,16 +1,67 @@
+import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
+import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
 
-/**
- * 酷狗适配器：主要承担「兜底搜歌」角色（SongResolver 二级检索）。
- * searchSongs 按关键词检索；fetchSongUrl 通过 play/getdata 拿到直链。
- */
+// --- 签名常量 ---
+const H5_SALT = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
+const ANDROID_SALT = 'OIlwieks28dk2k092lksi2UIkp';
+const SIGN_KEY_SALT = '57ae12eb6890223e355ccfcb74edf70d';
+const H5_SRC_APPID = 2919;
+const H5_CLIENTVER = 20000;
+const ANDROID_APPID = 1005;
+const ANDROID_CLIENTVER = 20489;
+const ANDROID_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
+
+function md5(s: string): string {
+  return crypto.createHash('md5').update(s).digest('hex');
+}
+
+/** H5 签名：md5(H5_SALT + sorted k=v + H5_SALT) */
+function h5Sign(params: Record<string, string>): string {
+  const sorted = Object.keys(params).sort().map(k => k + '=' + params[k]).join('&');
+  return md5(H5_SALT + sorted + H5_SALT);
+}
+
+/** Android 签名：md5(ANDROID_SALT + sorted k=v + body + ANDROID_SALT) */
+function androidSign(params: Record<string, string>, body: string): string {
+  const sorted = Object.keys(params).sort().map(k => k + '=' + params[k]).join('&');
+  return md5(ANDROID_SALT + sorted + body + ANDROID_SALT);
+}
+
+/** mobile 云 key：md5(hash + 'kgcloud') */
+function mobileKey(hash: string): string {
+  return md5(hash + 'kgcloud');
+}
+
+interface VipStatus {
+  isVip: boolean;
+  isSvip: boolean;
+  expireTime: number;
+  probedAt: number;
+}
+
+interface UrlCacheEntry {
+  url: string;
+  quality: string;
+  expireAt: number;
+}
+
+const VIP_TTL_MS = 5 * 60 * 1000;
+const URL_CACHE_TTL_MS = 10 * 60 * 1000;
+
 export class KugouAdapter implements PlatformAdapter {
   readonly platform = 'kugou' as const;
 
-  constructor(private http: HttpClient) {}
+  private vipCache: VipStatus | null = null;
+  private urlCache = new Map<string, UrlCacheEntry>();
+
+  constructor(
+    private http: HttpClient,
+    private cookies: CookieStore,
+  ) {}
 
   async fetchPlaylist(specialId: string): Promise<Playlist> {
     const data = await this.http.requestJson<{
@@ -45,27 +96,257 @@ export class KugouAdapter implements PlatformAdapter {
     }
   }
 
-  async fetchSongUrl(hash: string, albumId?: string, _quality?: string): Promise<SongUrl | null> {
+  /** VIP 探测：登录后调用一次，缓存 5 分钟。 */
+  async probeVip(): Promise<VipStatus> {
+    if (this.vipCache && Date.now() - this.vipCache.probedAt < VIP_TTL_MS) {
+      return this.vipCache;
+    }
+    const cookie = this.cookies.getHeader('kugou');
+    if (!cookie) {
+      const anon: VipStatus = { isVip: false, isSvip: false, expireTime: 0, probedAt: Date.now() };
+      this.vipCache = anon;
+      return anon;
+    }
     try {
+      const ts = Math.floor(Date.now() / 1000);
       const data = await this.http.requestJson<{
-        data?: { play_url?: string; quality?: string };
+        data?: { is_vip?: number; is_svip?: number; vip_expire_time?: number };
       }>(
-        `https://wwwapi.kugou.com/yy/index.php?r=play/getdata&hash=${encodeURIComponent(hash)}${albumId ? `&album_id=${encodeURIComponent(albumId)}` : ''}&mid=${encodeURIComponent(String(Math.floor(Math.random() * 1e10)))}&platid=4`,
-        { platform: 'kugou' },
+        `https://vip.kugou.com/recharge/roleinfo?n=${ts}`,
+        {
+          platform: 'kugou',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            Referer: 'https://vip.kugou.com/',
+          },
+        },
       );
-      const url = data?.data?.play_url;
-      if (!url) {
-        return { url: '', playable: false, trial: false, error: '酷狗取链失败（无播放地址）' };
-      }
-      return { url: url.replace(/^http:/, 'https:'), quality: data?.data?.quality ?? '' };
+      const d = data?.data;
+      const result: VipStatus = {
+        isVip: d?.is_vip === 1 || d?.is_svip === 1,
+        isSvip: d?.is_svip === 1,
+        expireTime: d?.vip_expire_time ?? 0,
+        probedAt: Date.now(),
+      };
+      this.vipCache = result;
+      return result;
     } catch (err) {
-      console.warn('[KugouAdapter] 取流失败:', err instanceof Error ? err.message : err);
-      return { url: '', playable: false, trial: false, error: '酷狗取链失败（接口异常）' };
+      console.warn('[KugouAdapter] VIP 探测失败:', err instanceof Error ? err.message : err);
+      const fallback: VipStatus = { isVip: false, isSvip: false, expireTime: 0, probedAt: Date.now() };
+      this.vipCache = fallback;
+      return fallback;
     }
   }
 
+  private getCacheKey(hash: string): string {
+    const rec = this.cookies.get('kugou');
+    const userid = this.extractCookieValue(rec?.cookies, 'userid') || '0';
+    const token = rec?.token || '';
+    return `${userid}:${token}:${hash}`;
+  }
+
+  private extractCookieValue(cookie: string | undefined | null, name: string): string {
+    if (!cookie) return '';
+    for (const seg of cookie.split(';')) {
+      const [k, v] = seg.trim().split('=');
+      if (k === name) return v || '';
+    }
+    return '';
+  }
+
+  /**
+   * 四路取链：hash 质量链（Res→SQ→HQ→File）× 四路（H5→Mobile→Web→Gateway）
+   * H5 为主路径，音质受限时逐路降级补偿。
+   */
+  async fetchSongUrl(hash: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
+    // 构建 hash 候选链（质量从高到低）
+    const candidates: string[] = [];
+    if (extra?.resHash && extra.resHash !== hash) candidates.push(extra.resHash as string);
+    if (extra?.sqHash && extra.sqHash !== hash) candidates.push(extra.sqHash as string);
+    if (extra?.hqHash && extra.hqHash !== hash) candidates.push(extra.hqHash as string);
+    candidates.push(hash);
+
+    const cookie = this.cookies.getHeader('kugou') || '';
+    const rec = this.cookies.get('kugou');
+    const userid = this.extractCookieValue(rec?.cookies, 'userid') || '';
+    const token = rec?.token || '';
+    const mid = this.extractCookieValue(cookie, 'kg_mid') || String(Math.floor(Math.random() * 1e10));
+    const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
+
+    for (const h of candidates) {
+      // 检查缓存
+      const ck = this.getCacheKey(h);
+      const cached = this.urlCache.get(ck);
+      if (cached && cached.expireAt > Date.now()) {
+        return { url: cached.url, quality: cached.quality };
+      }
+
+      // 四路依次尝试
+      const routes: Array<() => Promise<SongUrl | null>> = [
+        () => this.fetchH5(h, albumId, quality, userid, token, mid, dfid, cookie),
+        () => this.fetchMobile(h, albumId, userid, token),
+        () => this.fetchWeb(h, albumId, mid, dfid, userid, token),
+        () => this.fetchGateway(h, albumId, quality, userid, token, mid, dfid),
+      ];
+
+      for (const route of routes) {
+        try {
+          const result = await route();
+          if (result?.url) {
+            // 缓存结果
+            this.urlCache.set(ck, { url: result.url, quality: result.quality || '', expireAt: Date.now() + URL_CACHE_TTL_MS });
+            return result;
+          }
+        } catch { /* 继续下一路 */ }
+      }
+    }
+
+    return { url: '', playable: false, trial: false, error: '酷狗四路取链均失败' };
+  }
+
+  private async fetchH5(hash: string, albumId: string | undefined, quality: string | undefined, userid: string, token: string, mid: string, dfid: string, cookie: string): Promise<SongUrl | null> {
+    if (!userid || !token) return null;
+    const params: Record<string, string> = {
+      srcappid: String(H5_SRC_APPID),
+      clientver: String(H5_CLIENTVER),
+      clienttime: String(Date.now()),
+      mid, uuid: mid, dfid,
+      appid: '1014', token, userid,
+      area_code: '1', hash,
+      ssa_flag: 'is_fromtrack', version: '11430',
+      quality: quality || '320',
+      album_audio_id: albumId || '',
+      behavior: 'play', pid: '2', cmd: '26', pidversion: '3001',
+      IsFreePart: '0', cdnBackup: '1', module: '',
+    };
+    params.key = md5(hash + SIGN_KEY_SALT + params.appid + mid + (userid || '0'));
+    params.signature = h5Sign(params);
+    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    const data = await this.http.requestJson<{
+      status?: number;
+      url?: string;
+      bitRate?: number;
+      fileSize?: number;
+    }>(
+      `https://gateway.kugou.com/v5/url?${qs}`,
+      {
+        platform: 'kugou',
+        headers: {
+          'x-router': 'trackercdn.kugou.com',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        cookie: cookie || undefined,
+      },
+    );
+    if (data?.status === 1 && data.url) {
+      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      return { url: data.url.replace(/^http:/, 'https:'), quality: q };
+    }
+    return null;
+  }
+
+  private async fetchMobile(hash: string, albumId: string | undefined, userid: string, token: string): Promise<SongUrl | null> {
+    const key = mobileKey(hash);
+    const qs = `cmd=playInfo&hash=${encodeURIComponent(hash)}&key=${key}${albumId ? '&album_id=' + encodeURIComponent(albumId) : ''}&pid=1&forceDown=0&vip=${token ? '1' : '65530'}${userid ? '&userid=' + userid : ''}${token ? '&token=' + token : ''}`;
+    const data = await this.http.requestJson<{
+      url?: string;
+      fileSize?: number;
+      bitRate?: number;
+      vip?: number;
+    }>(
+      `http://m.kugou.com/app/i/getSongInfo.php?${qs}`,
+      {
+        platform: 'kugou',
+        headers: { Referer: 'http://m.kugou.com/' },
+      },
+    );
+    // vip=65530 表示 VIP 限制
+    if (data?.vip === 65530) return null;
+    if (data?.url) {
+      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      return { url: data.url.replace(/^http:/, 'https:'), quality: q };
+    }
+    return null;
+  }
+
+  private async fetchWeb(hash: string, albumId: string | undefined, mid: string, dfid: string, userid: string, token: string): Promise<SongUrl | null> {
+    const params = new URLSearchParams({
+      r: 'play/getdata',
+      hash,
+      appid: '1014',
+      platid: '4',
+      mid,
+      dfid,
+    });
+    if (albumId) params.set('album_id', albumId);
+    if (userid) params.set('userid', userid);
+    if (token) params.set('token', token);
+    const data = await this.http.requestJson<{
+      data?: { play_url?: string; quality?: string; bitrate?: number };
+    }>(
+      `https://wwwapi.kugou.com/yy/index.php?${params.toString()}`,
+      { platform: 'kugou' },
+    );
+    const url = data?.data?.play_url;
+    if (url) {
+      return { url: url.replace(/^http:/, 'https:'), quality: data?.data?.quality ?? '' };
+    }
+    return null;
+  }
+
+  private async fetchGateway(hash: string, albumId: string | undefined, quality: string | undefined, userid: string, token: string, mid: string, dfid: string): Promise<SongUrl | null> {
+    if (!userid || !token) return null;
+    const clienttime = String(Date.now());
+    const params: Record<string, string> = {
+      srcappid: String(ANDROID_APPID),
+      clientver: String(ANDROID_CLIENTVER),
+      clienttime, mid, uuid: mid, dfid,
+      appid: String(ANDROID_APPID), token, userid,
+      area_code: '1', hash,
+      ssa_flag: 'is_fromtrack', version: '11430',
+      quality: quality || '320',
+      album_audio_id: albumId || '',
+      behavior: 'play', pid: '2', cmd: '26', pidversion: '3001',
+      IsFreePart: '0', cdnBackup: '1', module: '',
+    };
+    params.key = md5(hash + SIGN_KEY_SALT + params.appid + mid + (userid || '0'));
+    const body = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    params.signature = androidSign(params, body);
+    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    const data = await this.http.requestJson<{
+      status?: number;
+      url?: string;
+      bitRate?: number;
+    }>(
+      `https://gateway.kugou.com/v5/url?${qs}`,
+      {
+        platform: 'kugou',
+        headers: {
+          'User-Agent': ANDROID_UA,
+          dfid, mid,
+          'kg-rc': '1',
+          'kg-thash': '5d816a0',
+          'kg-rec': '1',
+          'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+        },
+      },
+    );
+    if (data?.status === 1 && data.url) {
+      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      return { url: data.url.replace(/^http:/, 'https:'), quality: q };
+    }
+    return null;
+  }
+
   async listQualities(): Promise<QualityOption[]> {
-    return [{ level: 'auto', label: '标准' }];
+    const vip = await this.probeVip();
+    const base: QualityOption[] = [
+      { level: '128', label: '标准 128k' },
+      { level: '320', label: '高品 320k' },
+    ];
+    if (vip.isVip) base.push({ level: 'flac', label: '无损 FLAC', needsVip: true });
+    if (vip.isSvip) base.push({ level: 'hires', label: 'Hi-Res', needsSvip: true });
+    return base;
   }
 
   /**
@@ -83,7 +364,6 @@ export class KugouAdapter implements PlatformAdapter {
         const dlUrl = `https://krcs.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(candidate.id)}&accesskey=${encodeURIComponent(candidate.accesskey)}&fmt=lrc&charset=utf8`;
         const dlData = await this.http.requestJson<{ content?: string }>(dlUrl, { platform: 'kugou' });
         let raw = dlData?.content ?? '';
-        // krcs 返回 content 可能为 base64 编码
         if (raw && !raw.includes('[offset=') && !raw.includes('[00:')) {
           try { raw = Buffer.from(raw, 'base64').toString('utf-8'); } catch { /* 非 base64 */ }
         }

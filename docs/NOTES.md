@@ -27,7 +27,8 @@
 - QQ“我的歌单”必须走 musicu.fcg POST（music.musicasset.PlaylistBaseRead/GetPlaylistByUin，备用 UserSonglistService）；旧的 fcg_user_created_diss 登录态下已返回空列表。
 - QQ 退出登录需同时清空 `persist:qq-music-login` 分区（cookies+localstorage），否则官方登录窗口会残留旧账号自动登回。
 - Spotify 需要 `SPOTIFY_CLIENT_ID` 环境变量，未配置时登录按钮提示失败。
-- 酷狗 / 汽水无公开登录接口，面板中标注不可用（不要承诺可登录）。
+- 酷狗登录需要 Electron 浏览器窗口（阶段 1 待实现）；四路取链 + VIP 探测已实现。
+- 汽水登录需要签名引擎（阶段 2 待实现）；歌词已支持免登录获取（SEO + volcengine）。
 
 ## 待办 / 后续方向
 

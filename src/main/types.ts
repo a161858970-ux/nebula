@@ -112,7 +112,7 @@ export interface QualityOption {
 export interface PlatformAdapter {
   platform: Platform;
   fetchPlaylist(playlistId: string): Promise<Playlist>;
-  fetchSongUrl(songId: string, albumId?: string, quality?: string): Promise<SongUrl | null>;
+  fetchSongUrl(songId: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
   fetchComments?(songId: string): Promise<CommentResult | null>;
   fetchSongDetail?(songId: string): Promise<SongDetail | null>;

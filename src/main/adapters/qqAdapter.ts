@@ -130,7 +130,7 @@ export class QqAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchSongUrl(songmid: string, _albumId?: string, quality?: string): Promise<SongUrl | null> {
+  async fetchSongUrl(songmid: string, _albumId?: string, quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
     const cookie = this.cookies.getHeader('qq') ?? '';
     const uin = cookie.match(/(?:^|;\s*)uin=o?(\d+)/)?.[1] ?? '';
 

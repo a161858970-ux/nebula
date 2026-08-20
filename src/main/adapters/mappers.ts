@@ -78,7 +78,14 @@ export function mapKugouTrack(raw: Record<string, any> | undefined | null): Trac
       sourceId: String(raw.FileHash),
       originalUrl: '',
       fallbackUrl: '',
-      extra: { albumId: raw.AlbumID },
+      extra: {
+        albumId: raw.AlbumID,
+        hqHash: raw.HQFileHash || '',
+        sqHash: raw.SQFileHash || '',
+        resHash: raw.ResFileHash || '',
+        mixSongId: raw.MixSongID || '',
+        privilege: typeof raw.Privilege === 'number' ? raw.Privilege : 0,
+      },
     };
   } catch {
     return null;

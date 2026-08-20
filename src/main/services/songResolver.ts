@@ -55,7 +55,7 @@ export class SongResolver {
     }
     try {
       const direct = await withTimeout(
-        this.adapters[track.platform].fetchSongUrl(track.sourceId, undefined, quality),
+        this.adapters[track.platform].fetchSongUrl(track.sourceId, undefined, quality, track.extra),
         ADAPTER_TIMEOUT_MS,
         `[${track.platform}] fetchSongUrl`,
       );
@@ -107,7 +107,7 @@ export class SongResolver {
           const albumId =
             typeof candidate.extra?.albumId === 'string' ? candidate.extra.albumId : undefined;
           const url = await withTimeout(
-            source.fetchSongUrl(candidate.sourceId, albumId),
+            source.fetchSongUrl(candidate.sourceId, albumId, undefined, candidate.extra),
             ADAPTER_TIMEOUT_MS,
             `[${source.platform}] fallback fetchSongUrl`,
           );

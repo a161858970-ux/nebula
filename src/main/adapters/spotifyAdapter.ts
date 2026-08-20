@@ -63,7 +63,7 @@ export class SpotifyAdapter implements PlatformAdapter {
   }
 
   /** 无直链：返回 null，由 SongResolver 走跨平台兜底。 */
-  async fetchSongUrl(): Promise<SongUrl | null> {
+  async fetchSongUrl(_songId?: string, _albumId?: string, _quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
     return null;
   }
 

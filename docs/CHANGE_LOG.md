@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-08-20 — 阶段 1：酷狗四路取链 + VIP 探测
+
+**目标**
+
+1. 酷狗取链从单一 web getdata 升级为四路（H5 -> Mobile -> Web -> Gateway）质量链回退。
+2. VIP 探测（登录后缓存 5 分钟），驱动音质选项和取链决策。
+3. PlatformAdapter.fetchSongUrl 签名扩展 extra 参数，SongResolver 自动传递 Track.extra。
+
+**改动**
+
+- src/main/types.ts：PlatformAdapter.fetchSongUrl 增加可选 extra 参数。
+- src/main/adapters/mappers.ts：mapKugouTrack 增加 hqHash/sqHash/resHash/mixSongId/privilege 到 extra。
+- src/main/services/songResolver.ts：调用 fetchSongUrl 时传递 track.extra。
+- src/main/adapters/kugouAdapter.ts：全面重写
+  - 构造函数接受 CookieStore；
+  - probeVip()：调用 vip.kugou.com/recharge/roleinfo，缓存 5 分钟；
+  - fetchSongUrl：外层 hash 质量链（Res->SQ->HQ->File）+ 内层四路（H5->Mobile->Web->Gateway）；
+  - H5/Gateway 需登录（userid+token），Mobile 免登录，Web 不强制；
+  - 结果按 userid+token+hash 分桶缓存（10 分钟 TTL）；
+  - listQualities() 根据 VIP 状态动态返回可用品质。
+- src/main/adapters/index.ts：KugouAdapter 构造传入 cookies。
+- 其他适配器（netease/qq/spotify/qishui）：fetchSongUrl 签名同步更新（no-op）。
+
+**验证**
+
+- pnpm build（tsc + vite）通过。
+- pnpm qa:backend 全部通过（24/24）。
+
+
 ## 2026-08-20 — 阶段 0：酷狗歌词链升级 + 汽水适配器骨架
 
 **目标**
