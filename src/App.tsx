@@ -137,6 +137,7 @@ export default function App() {
     handleCustomColor,
     handleLyricBold,
     toggleTranslation,
+    lyricDebugInfo,
   } = lyrics;
 
   // ---------- 边缘感应面板（useEdgePanels） ----------
@@ -541,6 +542,38 @@ export default function App() {
       <button className="glass-btn center-btn" onClick={handleReset} aria-label="回到中心">
         ⌖ 回到中心
       </button>
+
+      {/* 开发调试：歌词来源信息（临时，发布前删除） */}
+      <div style={{
+        position: 'fixed',
+        bottom: 120,
+        right: 24,
+        background: 'rgba(0,0,0,0.75)',
+        color: '#0f0',
+        fontFamily: 'monospace',
+        fontSize: 12,
+        padding: '8px 12px',
+        borderRadius: 6,
+        lineHeight: 1.6,
+        zIndex: 9999,
+        pointerEvents: 'none',
+        minWidth: 180,
+      }}>
+        {lyricDebugInfo ? (
+          <>
+            <div>来源: {lyricDebugInfo.source}</div>
+            <div>YRC: {lyricDebugInfo.hasYrc ? '✓' : '✗'}</div>
+            <div>QRC: {lyricDebugInfo.hasQrc ? '✓' : '✗'}</div>
+            <div>逐字: {lyricDebugInfo.wordLines}/{lyricDebugInfo.totalLines}
+              ({lyricDebugInfo.totalLines > 0
+                ? Math.round(lyricDebugInfo.wordLines / lyricDebugInfo.totalLines * 100)
+                : 0}%)
+            </div>
+          </>
+        ) : (
+          <div>歌词: 无数据</div>
+        )}
+      </div>
 
       <BottomBar
         translateOn={lyricTranslationEnabled}

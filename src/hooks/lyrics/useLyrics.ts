@@ -5,6 +5,15 @@ import { alignWordsToText, filterCreditLines, mergeWordLyrics, type LyricLineUI 
 import type { LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
 
+/** 开发调试：当前歌曲歌词来源信息。 */
+export interface LyricDebugInfo {
+  source: string;
+  hasYrc: boolean;
+  hasQrc: boolean;
+  totalLines: number;
+  wordLines: number;
+}
+
 /** 后端歌词结果（unknown）防御性归一化。 */
 function normalizeLyricLines(data: unknown, title?: string, artist?: string): LyricLineUI[] {
   if (!data || typeof data !== 'object') return [];
@@ -71,6 +80,7 @@ export function useLyrics() {
   const [lyricTranslationEnabled, setLyricTranslationEnabled] = useState(
     () => typeof localStorage === 'undefined' || localStorage.getItem('music-nebula.lyric-translate') !== '0',
   );
+  const [lyricDebugInfo, setLyricDebugInfo] = useState<LyricDebugInfo | null>(null);
 
   // 随切歌拉取歌词：低频订阅（仅歌曲身份变化时触发）
   const songRef = useRef<Track | null>(null);
@@ -78,18 +88,34 @@ export function useLyrics() {
     const load = async (song: Track | null) => {
       if (!song) {
         setLyricLines([]);
+        setLyricDebugInfo(null);
         return;
       }
       if (!hasDesktopAPI() || !song.sourceId) {
         setLyricLines([]);
+        setLyricDebugInfo(null);
         return;
       }
       try {
         const res = await window.nebulaAPI!.fetchLyric(toBackendTrack(song));
-        const lines = normalizeLyricLines(res.ok ? res.data : null, song.title, song.artist);
+        const data = res.ok ? res.data : null;
+        const lines = normalizeLyricLines(data, song.title, song.artist);
         setLyricLines(lines);
+        if (data && typeof data === 'object') {
+          const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown };
+          setLyricDebugInfo({
+            source: typeof src.source === 'string' ? src.source : 'unknown',
+            hasYrc: typeof src.yrc === 'string' && src.yrc.length > 0,
+            hasQrc: typeof src.qrc === 'string' && src.qrc.length > 0,
+            totalLines: lines.length,
+            wordLines: lines.filter((l) => !!l.words?.length).length,
+          });
+        } else {
+          setLyricDebugInfo(null);
+        }
       } catch {
         setLyricLines([]);
+        setLyricDebugInfo(null);
       }
     };
     const check = () => {
@@ -153,6 +179,7 @@ export function useLyrics() {
 
   return {
     lyricLines,
+    lyricDebugInfo,
     lyricSettings,
     lyricTranslationEnabled,
     handleLyricFontSize,
