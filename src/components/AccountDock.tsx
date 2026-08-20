@@ -351,15 +351,14 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
     if (!window.nebulaAPI) return;
     setBusy(true);
     try {
-      // 支持多种格式：完整 cookie 字符串、单行 name=value、多行 name\nvalue
       let raw = cookieText.trim();
-      // 如果包含换行，尝试按行解析为 name=value 对
+      // 支持多行 name=value 格式（每行一个 cookie）
       if (raw.includes('\n') && !raw.includes(';')) {
         raw = raw.split('\n').filter(l => l.includes('=')).join('; ');
       }
-      // 如果不包含 ; 也不包含 = ，可能是单独的值，提示用户
+      // 如果不包含任何 = ，无法解析
       if (!raw.includes('=')) {
-        setStatus('请输入完整 Cookie（如 kg_mid=xxx; kg_dfid=yyy; userid=123; token=abc）');
+        setStatus('格式不对。请在 F12 → Network → 任意 kugou 请求 → Headers → Cookie 复制完整值（如 kg_mid=xxx; token=yyy）');
         setBusy(false);
         return;
       }

@@ -203,6 +203,7 @@ function createKugouLoginWindow(cookies, kugouLogin) {
     win.loadURL('https://www.kugou.com/');
 
     let settled = false;
+    let pollCount = 0;
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -210,32 +211,50 @@ function createKugouLoginWindow(cookies, kugouLogin) {
       resolve(result);
     };
 
-    // 每 1.2s 读取 partition cookie，出现 userid + token 即视为登录成功
+    // 每 1.5s 读取 partition cookie，检测登录态
     const timer = setInterval(async () => {
       try {
+        pollCount++;
         const list = await ses.cookies.get({});
         const raw = list.map((c) => `${c.name}=${c.value}`).join('; ');
-        // 检查关键字段
-        const hasUserid = /userid=\d+/.test(raw);
-        const hasToken = /token=\w+/.test(raw);
-        if (hasUserid && hasToken) {
-          // 登录成功，warmup 导航触发 token 签发
+        const names = list.map((c) => c.name);
+
+        // 每 10 次打印一次 cookie 列表（调试用）
+        if (pollCount % 10 === 0) {
+          console.log('[酷狗登录] 轮询 #' + pollCount + ' cookie 数量:', list.length, '字段:', names.join(', '));
+        }
+
+        // 检测登录态：KuGoo（URL编码复合值，含KugooID/NickName/Pic）或 userid+token
+        const hasKuGoo = names.includes('KuGoo');
+        const hasUserId = names.includes('userid') || /userid=\d+/.test(raw);
+        const hasToken = names.includes('token') || /token=\w+/.test(raw);
+        const hasKgMid = names.includes('kg_mid');
+
+        // 只要检测到 KuGoo 或 (userid + token)，就认为登录成功
+        if (hasKuGoo || (hasUserId && hasToken)) {
+          console.log('[酷狗登录] 检测到登录态! KuGoo:', hasKuGoo, 'userid:', hasUserId, 'token:', hasToken);
+
+          // warmup 导航触发 token 签发
           try {
-            win.loadURL('https://www.kugou.com/newuc/user/uc/type=edit');
+            await win.loadURL('https://www.kugou.com/newuc/user/uc/type=edit');
           } catch { /* ignore */ }
+
           // 等待 2s 让 warmup 完成
           await new Promise((r) => setTimeout(r, 2000));
-          // 重新读取 cookie
+
+          // 重新读取最终 cookie
           const finalList = await ses.cookies.get({});
           const finalRaw = finalList.map((c) => `${c.name}=${c.value}`).join('; ');
+          console.log('[酷狗登录] 最终 cookie 字段:', finalList.map((c) => c.name).join(', '));
+
           cookies.set('kugou', finalRaw, undefined, '酷狗音乐');
           if (!win.isDestroyed()) win.close();
           finish({ ok: true, message: '酷狗音乐登录成功' });
         }
-      } catch {
-        /* keep polling */
+      } catch (err) {
+        console.warn('[酷狗登录] 轮询异常:', err instanceof Error ? err.message : err);
       }
-    }, 1200);
+    }, 1500);
 
     win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
   });
