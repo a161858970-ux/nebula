@@ -19,10 +19,11 @@ function md5(s: string): string {
   return crypto.createHash('md5').update(s).digest('hex');
 }
 
-/** H5 签名：md5(H5_SALT + sorted k=v + H5_SALT) */
-function h5Sign(params: Record<string, string>): string {
-  const sorted = Object.keys(params).sort().map(k => k + '=' + params[k]).join('&');
-  return md5(H5_SALT + sorted + H5_SALT);
+/** H5 签名：md5(H5_SALT + sorted k=v[+bodyJson] + H5_SALT) */
+function h5Sign(params: Record<string, string>, bodyObj?: Record<string, unknown>): string {
+  const parts = Object.keys(params).sort().map(k => k + '=' + params[k]);
+  if (bodyObj && typeof bodyObj === 'object') parts.push(JSON.stringify(bodyObj));
+  return md5(H5_SALT + parts.join('') + H5_SALT);
 }
 
 /** Android 签名：md5(ANDROID_SALT + sorted k=v + body + ANDROID_SALT) */
@@ -355,45 +356,35 @@ export class KugouAdapter implements PlatformAdapter {
     const cookie = rec?.cookies || '';
     const userid = this.extractCookieValue(cookie, 'KugooID');
     const token = this.extractCookieValue(cookie, 't');
+    const mid = this.extractCookieValue(cookie, 'kg_mid') || '';
+    const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
     if (!userid || !token) return [];
     try {
       const params: Record<string, string> = {
         srcappid: String(H5_SRC_APPID),
         clientver: String(H5_CLIENTVER),
         clienttime: String(Date.now()),
-        mid: this.extractCookieValue(cookie, 'kg_mid') || '0',
-        uuid: this.extractCookieValue(cookie, 'kg_mid') || '0',
-        dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
-        appid: '1014', token, userid,
+        mid: mid || '0',
+        uuid: String(Date.now()),
+        dfid: dfid || '-',
+        appid: '1014', token, userid, plat: '1',
       };
-      const signature = h5Sign(params);
+      const bodyObj = { userid: Number(userid), token, total_ver: 979, type: 2, page: 1, pagesize: 50 };
+      params.signature = h5Sign(params, bodyObj);
+      const qs = Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
+      const url = 'https://gateway.kugou.com/v7/get_all_list?' + qs;
+      console.log('[KugouAdapter] fetchMyPlaylists url:', url.substring(0,180));
       const data = await this.http.requestJson<{
+        status?: number; error?: string;
         data?: { info?: Array<{ listid: string; specialname: string; imgurl: string; songcount: number }> };
-      }>('https://gateway.kugou.com/v7/get_all_list', {
-        platform: 'kugou',
-        method: 'POST',
-        form: { ...params, signature, userid, token, total_ver: '979', type: '2', page: '1', pagesize: '100', plat: '1' },
-        headers: { 'x-router': 'cloudlist.service.kugou.com' },
-      });
+      }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
+      if (data.status === 0) { console.warn('[KugouAdapter] API error:', data.error); return []; }
       const items = data?.data?.info ?? [];
-      console.log('[KugouAdapter] fetchMyPlaylists:', JSON.stringify({
-        status: (data as any)?.status, errcode: (data as any)?.errcode,
-        errmsg: (data as any)?.errmsg, itemCount: items.length,
-        userid, hasToken: !!token,
-        cookieKugouId: this.extractCookieValue(cookie, 'KugooID'),
-        cookieToken: this.extractCookieValue(cookie, 't') ? 'yes' : 'no',
-      }));
-      if (items.length === 0) {
-        console.log('[KugouAdapter] fetchMyPlaylists raw:', JSON.stringify(data).substring(0, 500));
-      }
-      return items.map((item) => ({
-        id: item.listid,
-        name: item.specialname,
-        cover: item.imgurl || '',
-        trackCount: item.songcount || 0,
-      }));
+      console.log('[KugouAdapter] fetchMyPlaylists:', items.length, 'items');
+      if (!items.length) console.log('[KugouAdapter] raw:', JSON.stringify(data).substring(0,500));
+      return items.map(item => ({ id: item.listid, name: item.specialname, cover: item.imgurl||'', trackCount: item.songcount||0 }));
     } catch (err) {
-      console.warn('[KugouAdapter] 用户歌单获取失败:', err instanceof Error ? err.message : err);
+      console.warn('[KugouAdapter] 歌单获取失败:', err instanceof Error ? err.message : err);
       return [];
     }
   }
@@ -404,26 +395,22 @@ export class KugouAdapter implements PlatformAdapter {
     const cookie = rec?.cookies || '';
     const userid = this.extractCookieValue(cookie, 'KugooID');
     const token = this.extractCookieValue(cookie, 't');
+    const mid = this.extractCookieValue(cookie, 'kg_mid') || '';
+    const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
     if (!userid || !token) return [];
     try {
       const params: Record<string, string> = {
         srcappid: String(H5_SRC_APPID),
         clientver: String(H5_CLIENTVER),
         clienttime: String(Date.now()),
-        mid: this.extractCookieValue(cookie, 'kg_mid') || '0',
-        uuid: this.extractCookieValue(cookie, 'kg_mid') || '0',
-        dfid: this.extractCookieValue(cookie, 'kg_dfid') || '',
+        mid: mid || '0', uuid: String(Date.now()), dfid: dfid || '-',
         appid: '1014', token, userid,
       };
-      const signature = h5Sign(params);
-      const data = await this.http.requestJson<{
-        data?: { info?: Array<Record<string, any>> };
-      }>('https://gateway.kugou.com/v4/get_list_all_file', {
-        platform: 'kugou',
-        method: 'POST',
-        form: { ...params, signature, listid: listId, userid, area_code: '1', show_relate_goods: '0', pagesize: '100', allplatform: '1', show_cover: '1', type: '0', token, page: '1' },
-        headers: { 'x-router': 'cloudlist.service.kugou.com' },
-      });
+      const bodyObj = { listid: listId, userid: Number(userid), token, area_code: 1, show_relate_goods: 0, pagesize: 100, allplatform: 1, show_cover: 1, type: 0, page: 1 };
+      params.signature = h5Sign(params, bodyObj);
+      const qs = Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
+      const url = 'https://gateway.kugou.com/v4/get_list_all_file?' + qs;
+      const data = await this.http.requestJson<{ data?: { info?: Array<Record<string, any>> } }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
       return (data?.data?.info ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
     } catch (err) {
       console.warn('[KugouAdapter] 歌单歌曲获取失败:', err instanceof Error ? err.message : err);
@@ -431,7 +418,7 @@ export class KugouAdapter implements PlatformAdapter {
     }
   }
 
-  /**
+    /**
    * 歌词获取：krcs 双接口为主（search -> download，支持逐字 LRC），
    * m.kugou.com krc.php 为兜底（纯行级 LRC）。
    */
