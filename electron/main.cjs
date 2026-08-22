@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
+﻿const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -139,7 +139,7 @@ function createQqLoginWindow(cookies) {
       console.warn('[QQ登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
     }
     const win = new BrowserWindow({
-      width: 560,
+      width: 1000,
       height: 800,
       backgroundColor: '#0b0c16',
       webPreferences: {
@@ -190,7 +190,7 @@ function createKugouLoginWindow(cookies, kugouLogin) {
       console.warn('[酷狗登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
     }
     const win = new BrowserWindow({
-      width: 560,
+      width: 1000,
       height: 800,
       backgroundColor: '#0b0c16',
       webPreferences: {
@@ -224,12 +224,12 @@ function createKugouLoginWindow(cookies, kugouLogin) {
           }
         }
         // 检查是否捕获到关键字段
-        const hasUserid = capturedCookies.has('userid');
-        const hasToken = capturedCookies.has('token');
+        const hasKugooID = capturedCookies.has('KugooID');
+        const hasT = capturedCookies.has('t');
         const hasKuGoo = capturedCookies.has('KuGoo');
         console.log('[酷狗登录] Set-Cookie 捕获:', Array.from(capturedCookies.keys()).join(', '));
 
-        if (hasKuGoo || (hasUserid && hasToken)) {
+        if (hasKuGoo || (hasKugooID && hasT)) {
           console.log('[酷狗登录] 通过 Set-Cookie 检测到登录态!');
           doLoginSuccess();
         }
@@ -250,7 +250,7 @@ function createKugouLoginWindow(cookies, kugouLogin) {
         // 合并两种来源的 cookie
         const allNames = new Set([...list.map(c => c.name), ...capturedCookies.keys()]);
 
-        if (allNames.has('KuGoo') || (allNames.has('userid') && allNames.has('token'))) {
+        if (allNames.has('KuGoo') || (allNames.has('KugooID') && allNames.has('t'))) {
           console.log('[酷狗登录] 通过轮询检测到登录态!');
           doLoginSuccess();
         }
@@ -266,18 +266,19 @@ function createKugouLoginWindow(cookies, kugouLogin) {
       } catch { /* ignore */ }
       await new Promise((r) => setTimeout(r, 2000));
 
-      // 收集所有 cookie
+      // 收集所有 cookie（session + captured 合并，captured 优先覆盖）
       const list = await ses.cookies.get({});
-      // Use ||| delimiter to safely join cookies (KuGoo value contains & separators)
-      // capturedCookies may have fuller values (e.g. full KuGoo with NickName) than session store
-      const storeCookies = list.map(c => `${c.name}=${c.value}`).join('|||');
-      const capturedAll = Array.from(capturedCookies.entries())
-        .map(([k, v]) => `${k}=${v}`).join('|||');
-      const finalParts = [storeCookies, capturedAll].filter(Boolean);
-      // normalizeCookieHeader deduplicates by name (last wins), so captured full values overwrite truncated ones
-      const finalRaw = finalParts.join('|||');
+      const merged = new Map();
+      for (const c of list) merged.set(c.name, c.value);
+      for (const [k, v] of capturedCookies) merged.set(k, v);
+      const finalRaw = Array.from(merged.entries())
+        .map(([k, v]) => `${k}=${v}`).join('; ');
+
+
 
       console.log('[酷狗登录] 保存 cookie 字段:', [...new Set([...list.map(c => c.name), ...capturedCookies.keys()])].join(', '));
+      console.log('[酷狗登录] finalRaw 长度:', finalRaw.length, '前100字符:', finalRaw.substring(0, 100));
+      console.log('[酷狗登录] 包含 KugooID:', finalRaw.includes('KugooID'));
       cookies.set('kugou', finalRaw, undefined, '酷狗音乐');
       if (!win.isDestroyed()) win.close();
       finish({ ok: true, message: '酷狗音乐登录成功' });

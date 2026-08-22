@@ -24,7 +24,7 @@ interface PlaylistDockProps {
 
 /** 未登录平台窗口内文案（与原型逐字一致）。 */
 const UNAVAILABLE_TEXT: Record<string, string> = {
-  kugou: '酷狗网页登录接口未公开，暂不支持账号登录',
+  kugou: '未登录酷狗音乐 · 请在右侧登录面板扫码或粘贴 Cookie',
   qishui: '汽水音乐为字节系封闭平台，暂无公开登录/歌单 API',
   spotify: '未登录 Spotify · 需配置 SPOTIFY_CLIENT_ID',
 };
@@ -189,9 +189,9 @@ export const PlaylistDock = memo(function PlaylistDock({
                     <span
                       className="pl-head-cover"
                       style={
-                        currentPlaylist?.cover
+                        (currentPlaylist?.cover || pl.cover)
                           ? {
-                              backgroundImage: `url(${currentPlaylist.cover})`,
+                              backgroundImage: `url(${currentPlaylist?.cover || pl.cover})`,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                             }

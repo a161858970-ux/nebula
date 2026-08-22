@@ -60,7 +60,7 @@ export function useAccounts() {
         if (!res.ok) return;
         setPlatforms(res.data);
         if (cancelled) return;
-        const targets = res.data.filter((p) => p.kind === 'qr' || p.kind === 'oauth');
+        const targets = res.data.filter((p) => p.kind === 'qr' || p.kind === 'oauth' || p.kind === 'window');
         return Promise.all(targets.map((p) => refreshAccount(p.platform)));
       })
       .catch(() => {

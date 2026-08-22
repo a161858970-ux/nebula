@@ -51,7 +51,7 @@ export interface DesktopPlaylistSummary {
 export interface DesktopLoginPlatform {
   platform: string;
   name: string;
-  kind: 'qr' | 'oauth' | 'unavailable';
+  kind: 'qr' | 'oauth' | 'window' | 'unavailable';
   unavailableReason: string | null;
 }
 

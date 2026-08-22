@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
@@ -324,6 +324,12 @@ function PlatformLogin({
       </div>
     );
   }
+  if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
+  if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
+  if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
+  if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
+  return <div className="pf-flow"><div className="pf-status">暂不支持该平台登录</div></div>;
+}
 /** 酷狗音乐：官方登录页（BrowserWindow）。 */
 function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -415,12 +421,6 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-  if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
-  if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
-  if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
-  if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
-  return <div className="pf-flow"><div className="pf-status">暂不支持该平台登录</div></div>;
-}
 
 const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
   { id: 'fill', name: '原图直铺' },
