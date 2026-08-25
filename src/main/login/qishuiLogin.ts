@@ -277,7 +277,7 @@ export class QishuiLogin {
   /** 通用 passport 请求（通过签名引擎） */
   private async request(method: string, pathname: string, params: Record<string, any> = {}, data?: Record<string, any>): Promise<any> {
     await this.initSignEngine();
-    const identity = this.ensureIdentity();
+    const identity = await this.ensureIdentity();
     const query: Record<string, any> = { ...this.commonParams(identity), ...params };
     const url = new URL(pathname, API_BASE);
     for (const [name, value] of Object.entries(query)) {
@@ -360,7 +360,8 @@ export class QishuiLogin {
 
   /** 生成二维码 */
   async getQrCode(): Promise<{ qrcode: string; token: string; scanUrl: string }> {
-    const identity = this.ensureIdentity();
+    await this.initSignEngine();
+    const identity = await this.ensureIdentity();
     const envelope = await this.request('GET', '/passport/web/get_qrcode/', {
       next: API_BASE,
       need_logo: 'false',
@@ -385,7 +386,8 @@ export class QishuiLogin {
   async checkQrConnect(
     token: string,
   ): Promise<{ status: string; error_code: number; session_cookie?: string; _loginOk?: boolean }> {
-    const identity = this.ensureIdentity();
+    await this.initSignEngine();
+    const identity = await this.ensureIdentity();
     const body: Record<string, any> = {
       need_logo: 'false',
       need_short_url: 'false',
@@ -402,13 +404,32 @@ export class QishuiLogin {
       console.log('[QishuiLogin] 2046 二次验证触发，envelope keys:', Object.keys(envelope).join(', '), 'data keys:', Object.keys(data).join(', '));
       console.log('[QishuiLogin] 2046 envelope(截断):', JSON.stringify(envelope).slice(0, 2500));
       const decision = { ...envelope, ...data };
-      if (!decision.verify_portrait_id) decision.verify_portrait_id = identity.verifyPortraitId;
+      // 关键：服务端 flow 已绑定固定 verify_portrait_id（std_verify_flow_id），
+      // 必须沿用同一个 portrait_id 继续流程，否则组件报 mulit_verify_exist（已存在验证）
+      const serverFlowId =
+        String(decision.std_verify_flow_id || decision.biz_params?.std_verify_flow_id || decision.common_params?.std_verify_flow_id || '');
+      if (decision.verify_portrait_id) {
+        // 保留服务端下发的 portrait_id
+      } else if (serverFlowId) {
+        decision.verify_portrait_id = serverFlowId;
+        // 同步 identity，让后续请求（pack_verify_ways_data 等）使用同一 portrait
+        this.identity = { ...identity, verifyPortraitId: serverFlowId };
+        await this.window
+          ?.webContents.executeJavaScript(
+            `localStorage.setItem('nebula_qishui_identity', ${JSON.stringify(JSON.stringify(this.identity))}); true`,
+            true,
+          )
+          .catch(() => {});
+      } else {
+        decision.verify_portrait_id = identity.verifyPortraitId;
+      }
       console.log('[QishuiLogin] 2046 decision 关键字段:', JSON.stringify({
         verify_from: decision.verify_from,
         verify_way: decision.verify_way,
         hasUrl: !!decision.url,
         url: String(decision.url || '').slice(0, 180),
         verify_portrait_id: decision.verify_portrait_id,
+        server_flow_id: serverFlowId,
         biz_params_type: typeof decision.biz_params,
         description: decision.description || '',
         error_code: decision.error_code,
@@ -704,20 +725,56 @@ export class QishuiLogin {
     }
   }
 
-  private ensureIdentity(): { deviceId: string; installId: string; computerName: string; verifyPortraitId: string } {
-    if (!this.identity) {
-      // 逐位生成数字串，避免 crypto.randomInt 的 max-min 超过 2^48-1 上限
-      const randomDigits = (length: number): string => {
-        let value = String(crypto.randomInt(1, 10));
-        while (value.length < length) value += String(crypto.randomInt(0, 10));
-        return value;
-      };
-      this.identity = {
-        deviceId: randomDigits(16),
-        installId: randomDigits(15),
-        computerName: os.hostname() || 'Windows-PC',
-        verifyPortraitId: crypto.randomUUID() + '.login',
-      };
+  private async ensureIdentity(): Promise<{
+    deviceId: string;
+    installId: string;
+    computerName: string;
+    verifyPortraitId: string;
+  }> {
+    if (this.identity) return this.identity;
+    // 跨重启持久化（persist partition 的 localStorage）：身份必须稳定，否则服务端视为新设备并触发风控
+    try {
+      if (this.window && !this.window.isDestroyed()) {
+        const stored = await this.window.webContents.executeJavaScript(
+          `localStorage.getItem('nebula_qishui_identity') || ''`,
+          true,
+        );
+        const parsed = JSON.parse(String(stored || '{}'));
+        if (parsed && parsed.deviceId && parsed.installId && parsed.verifyPortraitId) {
+          const restored = parsed as {
+            deviceId: string;
+            installId: string;
+            computerName: string;
+            verifyPortraitId: string;
+          };
+          this.identity = restored;
+          return restored;
+        }
+      }
+    } catch {
+      /* 恢复失败则新建 */
+    }
+    // 逐位生成数字串，避免 crypto.randomInt 的 max-min 超过 2^48-1 上限
+    const randomDigits = (length: number): string => {
+      let value = String(crypto.randomInt(1, 10));
+      while (value.length < length) value += String(crypto.randomInt(0, 10));
+      return value;
+    };
+    this.identity = {
+      deviceId: randomDigits(16),
+      installId: randomDigits(15),
+      computerName: os.hostname() || 'Windows-PC',
+      verifyPortraitId: crypto.randomUUID() + '.login',
+    };
+    try {
+      if (this.window && !this.window.isDestroyed()) {
+        await this.window.webContents.executeJavaScript(
+          `localStorage.setItem('nebula_qishui_identity', ${JSON.stringify(JSON.stringify(this.identity))}); true`,
+          true,
+        );
+      }
+    } catch {
+      /* 持久化失败不阻塞登录 */
     }
     return this.identity;
   }
