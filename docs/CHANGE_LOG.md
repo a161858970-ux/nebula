@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-08-25 — 汽水登录第四轮回修：mcs 埋点 TLS 指纹风控绕过
+
+**目标**
+
+验证窗口已能渲染官方 UI，但组件初始化时对 `mcs.zijieapi.com`（抖音埋点，`aid=1661`）的请求在 Chromium 内 SSL 握手失败（`net_error -100`，curl / Node 均正常），组件回调 `mulit_verify_exist`。
+
+**改动**
+
+- `qishuiLogin.ts`：本地资源服务器新增 `/mcs-proxy` 端点——接收 mcs 请求体，用 **Node TLS 栈**转发到真实 `mcs.zijieapi.com` 并原样返回（状态码/响应头/体）。
+- `security_host.html`：`fetch` 与 `XMLHttpRequest` 双重写——URL 含 `mcs.zijieapi.com` 时改发本地 `/mcs-proxy`（同源，保留方法/头/体），验证组件加载前生效。
+
+**验证**
+
+- pnpm exec tsc --noEmit / build:main 通过；curl 与 Node https 实测 `mcs.zijieapi.com/webid` 返回 HTTP 200（确认 Node 转发链路可用）。
+
+**遗留与风险**
+
+- 若验证组件还依赖其它被风控的域名，需按同样模式扩展；`mulit_verify_exist` 若仍出现，下一步排查服务端残留验证会话。
+
 ## 2026-08-25 — 汽水登录第三轮回修：2046 二次验证组件修复
 
 **目标**

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import type { CookieStore } from '../cookieStore';
@@ -65,6 +66,55 @@ export class QishuiLogin {
     };
     this.assetServer = http.createServer((req, res) => {
       const urlPath = (req.url || '/').split('?')[0];
+      // mcs 埋点代理：Node TLS 转发（Chromium 的 TLS 指纹被抖音风控拒绝，Node/curl 正常）
+      if (urlPath === '/mcs-proxy') {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        const target = String(url.searchParams.get('url') || '');
+        if (!/^https:\/\/mcs\.zijieapi\.com\//.test(target)) {
+          res.writeHead(400);
+          res.end('bad proxy target');
+          return;
+        }
+        let body = '';
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString('utf8');
+        });
+        req.on('end', () => {
+          const upstream = https.request(
+            target,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': req.headers['content-type'] || 'application/json',
+                'User-Agent': req.headers['user-agent'] || UA,
+                Accept: req.headers['accept'] || 'application/json, text/plain, */*',
+              },
+            },
+            (upstreamRes) => {
+              let data = '';
+              upstreamRes.on('data', (chunk: Buffer) => {
+                data += chunk.toString('utf8');
+              });
+              upstreamRes.on('end', () => {
+                const outHeaders: Record<string, string | string[]> = {};
+                for (const [k, v] of Object.entries(upstreamRes.headers)) {
+                  if (k && v != null) outHeaders[k] = v;
+                }
+                outHeaders['Access-Control-Allow-Origin'] = '*';
+                res.writeHead(upstreamRes.statusCode || 200, outHeaders);
+                res.end(data);
+              });
+            },
+          );
+          upstream.on('error', () => {
+            res.writeHead(502);
+            res.end('{}');
+          });
+          if (body) upstream.write(body);
+          upstream.end();
+        });
+        return;
+      }
       const filePath = path.join(enginePath, urlPath === '/' ? 'security_seed.html' : urlPath);
       const ext = path.extname(filePath);
       const contentType = mimeTypes[ext] || 'application/octet-stream';

@@ -195,6 +195,66 @@
         });
       };
 
+      // ---- mcs 埋点代理：Chromium TLS 指纹被抖音风控拒绝，重写到本地 /mcs-proxy 由 Node 转发 ----
+      (function () {
+        const PROXY_PATH = '/mcs-proxy';
+        const isMcs = (value) => String(value || '').includes('mcs.zijieapi.com');
+
+        // fetch 重写
+        const nativeFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          const url = typeof input === 'string' ? input : input && input.url;
+          if (isMcs(url)) {
+            return nativeFetch(PROXY_PATH + '?url=' + encodeURIComponent(String(url)), {
+              method: 'POST',
+              headers: (init && init.headers) || { 'Content-Type': 'application/json' },
+              body: (init && init.body) || undefined,
+            });
+          }
+          return nativeFetch(input, init);
+        };
+
+        // XHR 重写（组件若用 XHR 走 mcs）
+        const nativeOpen = XMLHttpRequest.prototype.open;
+        const nativeSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+        const nativeSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          this.__mcsTarget = isMcs(url) ? String(url) : null;
+          return nativeOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+          if (this.__mcsTarget) {
+            if (!this.__mcsHeaders) this.__mcsHeaders = {};
+            this.__mcsHeaders[String(name)] = String(value);
+          }
+          return nativeSetHeader.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function (body) {
+          if (this.__mcsTarget) {
+            const target = this.__mcsTarget;
+            const headers = this.__mcsHeaders || {};
+            const payload = typeof body === 'string' ? body : body == null ? '' : String(body);
+            fetch(PROXY_PATH + '?url=' + encodeURIComponent(target), {
+              method: 'POST',
+              headers: { 'Content-Type': headers['Content-Type'] || 'application/json' },
+              body: payload,
+            })
+              .then(async (response) => {
+                const text = await response.text();
+                Object.defineProperty(this, 'status', { value: response.status, configurable: true });
+                Object.defineProperty(this, 'responseText', { value: text, configurable: true });
+                Object.defineProperty(this, 'readyState', { value: 4, configurable: true });
+                if (typeof this.onload === 'function') this.onload.call(this);
+              })
+              .catch(() => {
+                if (typeof this.onerror === 'function') this.onerror.call(this);
+              });
+            return;
+          }
+          return nativeSend.apply(this, arguments);
+        };
+      })();
+
       function setMfaStatus(message, isError = false) {
         const element = document.getElementById('mfa-status');
         if (!element) return;
