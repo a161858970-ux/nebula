@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-08-25 — 汽水取链战略调整：放弃直取，多平台 VIP 路由兜底
+
+**目标**
+
+track_v2 空响应经系统性排查（Node/浏览器/签名/acrawler/msToken/多域名/换出口 IP）确认无法在当前环境取得汽水音源；汽水仅保留歌单导入/识别能力，播放全部路由到其它平台，并按用户已登录账号的 VIP 状态自动择优。
+
+**改动**
+
+- 新增 `src/main/services/platformRouter.ts`：`createFallbackPriorityProvider`——按各平台 `getAccount()` 的 SVIP/VIP/已登录状态排序兜底平台（qishui 默认排除），60 秒缓存。
+- `SongResolver`：可注入 fallback 路由（`setFallbackTargets`）；`resolveFallback` 改为按路由顺序遍历（含 QQ/Spotify 等全部平台），VIP/SVIP 平台按用户请求音质取链、免费/未登录平台用默认音质提高可用性；无注入时保持旧固定顺序（netease → kugou）。
+- `electron/main.cjs`：loginAdapters 就绪后注入 `createFallbackPriorityProvider(loginAdapters)`。
+
+**验证**
+
+- tsc / qa:backend（26/26）全绿。
+
+**遗留与风险**
+
+- 各平台 VIP 上报质量不一：酷狗 `getAccount` 目前硬编码 isVip:false（probeVip 在 adapter 内），后续可把 VIP 状态接入路由；网易云/QQ 若 getAccount 未上报 VIP 需补。
+- 汽水 `#auth=` 解密、x-bogus 逆向等不再排期（取链放弃）；若未来汽水开放或网络环境变化可重新评估。
+
 ## 2026-08-25 — 汽水取链排查结论（IP 风控）+ 自定义封面兜底
 
 **目标**

@@ -24,6 +24,7 @@ const {
   AudioProxy,
   LyricCache,
   WallpaperLibrary,
+  createFallbackPriorityProvider,
   probeAudioUrl,
   normalizeCookieHeader,
   validatePlatformCookie,
@@ -613,6 +614,8 @@ app.whenReady().then(() => {
       getMyPlaylists: () => adapters.spotify.getMyPlaylists(),
     },
   };
+  // 多平台 VIP 路由：按已登录账号的 SVIP/VIP 状态决定音源兜底顺序（汽水仅作歌单来源）
+  resolver.setFallbackTargets(createFallbackPriorityProvider(loginAdapters));
 
   registerIpcHandlers(ipcMain, {
     adapters,

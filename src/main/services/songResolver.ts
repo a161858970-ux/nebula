@@ -1,5 +1,6 @@
 import type { AdapterMap } from '../adapters/index';
 import type { PlatformAdapter, ResolveResult, Track } from '../types';
+import type { FallbackTarget } from './platformRouter';
 import { durationSimilarity, titleSimilarity } from '../adapters/mappers';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -37,11 +38,18 @@ export function matchScore(candidate: Track, target: Track): number {
  * - enrichFallback(): fills fallbackUrl for the frontend <audio> onerror retry path.
  */
 export class SongResolver {
+  private fallbackTargets: (() => Promise<FallbackTarget[]>) | null = null;
+
   constructor(
     private adapters: AdapterMap,
     private log: (m: string) => void = (m) => console.warn('[SongResolver]', m),
     private probe?: UrlProbe,
   ) {}
+
+  /** 注入多平台 VIP 路由（electron 主进程接线；缺省时保持旧固定顺序）。 */
+  setFallbackTargets(getTargets: () => Promise<FallbackTarget[]>): void {
+    this.fallbackTargets = getTargets;
+  }
 
   async resolve(track: Track, quality?: string): Promise<ResolveResult | null> {
     if (track.originalUrl) {
@@ -78,7 +86,7 @@ export class SongResolver {
     } catch (err) {
       this.log(`primary fetch error ${track.id}: ${errMsg(err)}`);
     }
-    const fallbackResult = await this.resolveFallback(track);
+    const fallbackResult = await this.resolveFallback(track, quality);
     return (
       fallbackResult ?? {
         url: '',
@@ -92,10 +100,24 @@ export class SongResolver {
   }
 
   /** Secondary fallback: cross-platform search -> title/duration score -> try fetch. */
-  async resolveFallback(track: Track): Promise<ResolveResult | null> {
+  async resolveFallback(track: Track, quality?: string): Promise<ResolveResult | null> {
     const keyword = `${track.title} ${track.artist}`.trim();
-    const sources: PlatformAdapter[] = [this.adapters.netease, this.adapters.kugou];
-    for (const source of sources) {
+    let targets: FallbackTarget[];
+    try {
+      targets = this.fallbackTargets ? await this.fallbackTargets() : [];
+    } catch {
+      targets = [];
+    }
+    const sources: Array<{ adapter: PlatformAdapter; tier: FallbackTarget['tier'] }> = targets.length
+      ? targets
+          .filter((t) => t.platform !== track.platform)
+          .map((t) => ({ adapter: this.adapters[t.platform as keyof AdapterMap], tier: t.tier }))
+          .filter((s): s is { adapter: PlatformAdapter; tier: FallbackTarget['tier'] } => !!s.adapter)
+      : [
+          { adapter: this.adapters.netease, tier: 'guest' as const },
+          { adapter: this.adapters.kugou, tier: 'guest' as const },
+        ];
+    for (const { adapter: source, tier } of sources) {
       if (!source.searchSongs) continue;
       try {
         const candidates = await source.searchSongs(keyword, 15);
@@ -107,7 +129,13 @@ export class SongResolver {
           const albumId =
             typeof candidate.extra?.albumId === 'string' ? candidate.extra.albumId : undefined;
           const url = await withTimeout(
-            source.fetchSongUrl(candidate.sourceId, albumId, undefined, candidate.extra),
+            // VIP/SVIP 平台按用户请求音质取链；免费/未登录平台用默认音质提高可用性
+            source.fetchSongUrl(
+              candidate.sourceId,
+              albumId,
+              tier === 'svip' || tier === 'vip' ? quality : undefined,
+              candidate.extra,
+            ),
             ADAPTER_TIMEOUT_MS,
             `[${source.platform}] fallback fetchSongUrl`,
           );

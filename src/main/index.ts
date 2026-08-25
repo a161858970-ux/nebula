@@ -19,6 +19,7 @@ export * from './services/lyricService';
 export * from './services/lyricCache';
 export * from './services/wallpaperLibrary';
 export * from './services/qqRights';
+export * from './services/platformRouter';
 export * from './login/index';
 export { registerIpcHandlers } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
