@@ -112,7 +112,16 @@ export class QishuiLogin {
 
     // 跨域 XHR 的 CORS 放行 + 捕获 Set-Cookie（无 CORS 头时 XHR 的 Set-Cookie 不会写入 session）
     ses.webRequest.onHeadersReceived(
-      { urls: ['https://api.qishui.com/*', 'https://*.qishui.com/*', 'https://*.douyin.com/*', 'https://*.volcengine.com/*'] },
+      {
+        urls: [
+          'https://api.qishui.com/*',
+          'https://*.qishui.com/*',
+          'https://*.douyin.com/*',
+          'https://*.volcengine.com/*',
+          'https://verify.zijieapi.com/*',
+          'https://auth.zijieapi.com/*',
+        ],
+      },
       (details: any, callback: any) => {
         const headers: Record<string, string[]> = { ...(details.responseHeaders || {}) };
         headers['Access-Control-Allow-Origin'] = ['*'];
@@ -139,6 +148,14 @@ export class QishuiLogin {
         callback({ responseHeaders: headers });
       },
     );
+
+    // 网络诊断：记录验证流程中失败的请求（SSL/连接错误等）
+    ses.webRequest.onErrorOccurred({ urls: ['<all_urls>'] }, (details: any) => {
+      const err = String(details.error || '');
+      if (/ssl|err_|failed/i.test(err)) {
+        console.log('[QishuiLogin] 请求错误:', details.method, details.url, '->', err);
+      }
+    });
 
     // 创建隐藏窗口
     this.window = new BrowserWindow({

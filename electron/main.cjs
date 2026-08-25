@@ -348,6 +348,7 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
 
       let settled = false;
       let pollTimer = null;
+      let pollErrors = 0;
       const finish = (result) => {
         if (settled) return;
         settled = true;
@@ -373,7 +374,15 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
             win.webContents.executeJavaScript('document.getElementById("status").textContent = "已扫码，请在手机上确认"');
           }
         } catch (err) {
+          pollErrors += 1;
           console.warn('[汽水登录] 轮询失败:', err);
+          win.webContents.executeJavaScript(
+            `document.getElementById("status").textContent = "验证异常：${String(err.message || err).replace(/[\\'"]/g, '')}（持续重试中…）"`,
+          ).catch(() => {});
+          // 连续失败超过 12 次（约 24 秒）仍无法完成，判定登录失败，避免无限闪窗
+          if (pollErrors >= 12) {
+            finish({ ok: false, error: `汽水登录验证失败：${String(err.message || err)}` });
+          }
         }
       }, 2000);
 
