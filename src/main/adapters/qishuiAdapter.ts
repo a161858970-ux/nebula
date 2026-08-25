@@ -122,18 +122,23 @@ export class QishuiAdapter implements PlatformAdapter {
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const cookie = this.getCookie();
     if (!cookie) throw new Error('汽水歌单需要登录');
-    const data = await this.pcRequest<any>('/luna/pc/playlist/detail', {
+    const json = await this.pcRequest<any>('/luna/pc/playlist/detail', {
       playlist_id: playlistId,
       cursor: '0',
       count: '300',
     }, cookie);
-    const playlist = data?.data || {};
-    const tracks = (playlist.tracks || []).map((t: any) => this.mapTrack(t)).filter(Boolean) as Track[];
+    // 实测结构：顶层 playlist + media_resources[].entity.track_wrapper.track
+    const playlist = json?.playlist || json?.data?.playlist || {};
+    const resources: any[] = json?.media_resources || json?.data?.media_resources || [];
+    const tracks = resources
+      .map((r: any) => r?.entity?.track_wrapper?.track || r?.track || r)
+      .map((t: any) => this.mapTrack(t))
+      .filter(Boolean) as Track[];
     return {
       id: playlistId,
       platform: 'qishui',
       name: playlist.title || playlist.name || '汽水歌单',
-      cover: playlist.cover?.url_list?.[0] || playlist.cover || '',
+      cover: playlist.url_cover?.urls?.[0] || playlist.cover?.url_list?.[0] || playlist.cover || '',
       tracks,
     };
   }
@@ -187,24 +192,23 @@ export class QishuiAdapter implements PlatformAdapter {
 
     const playlists: PlaylistSummary[] = [];
 
-    // 1) 我创建的歌单
+    // 1) 我的歌单（实测：/luna/pc/me/playlist，顶层 playlists 数组）
     try {
-      const data = await this.pcRequest<any>('/luna/pc/user/playlist', {
-        user_id: '',
+      const data = await this.pcRequest<any>('/luna/pc/me/playlist', {
         cursor: '0',
-        count: '50',
+        count: '100',
       }, cookie);
-      const items = data?.data?.playlists || [];
+      const items = data?.playlists || data?.data?.playlists || [];
       for (const pl of items) {
         playlists.push({
           id: String(pl.id || pl.playlist_id || ''),
-          name: pl.title || pl.name || '汽水歌单',
-          cover: pl.cover?.url_list?.[0] || pl.cover || '',
-          trackCount: Number(pl.track_count || pl.song_count || 0),
+          name: pl.title || pl.name || '我的歌单',
+          cover: pl.url_cover?.urls?.[0] || pl.cover?.url_list?.[0] || pl.cover || '',
+          trackCount: Number(pl.count_tracks || pl.track_count || pl.song_count || 0),
         });
       }
     } catch (err) {
-      console.warn('[QishuiAdapter] 创建歌单获取失败:', err instanceof Error ? err.message : err);
+      console.warn('[QishuiAdapter] 我的歌单获取失败:', err instanceof Error ? err.message : err);
     }
 
     // 2) 收藏歌单
@@ -213,14 +217,14 @@ export class QishuiAdapter implements PlatformAdapter {
         cursor: '0',
         count: '50',
       }, cookie);
-      const items = data?.data?.playlists || [];
+      const items = data?.playlists || data?.data?.playlists || [];
       for (const pl of items) {
         if (!playlists.some(p => p.id === String(pl.id || pl.playlist_id))) {
           playlists.push({
             id: String(pl.id || pl.playlist_id || ''),
             name: pl.title || pl.name || '收藏歌单',
-            cover: pl.cover?.url_list?.[0] || pl.cover || '',
-            trackCount: Number(pl.track_count || pl.song_count || 0),
+            cover: pl.url_cover?.urls?.[0] || pl.cover?.url_list?.[0] || pl.cover || '',
+            trackCount: Number(pl.count_tracks || pl.track_count || pl.song_count || 0),
           });
         }
       }
@@ -323,10 +327,16 @@ export class QishuiAdapter implements PlatformAdapter {
       const id = String(item.id || item.track_id || '');
       if (!id) return null;
       const title = item.title || item.name || '';
-      const artists = (item.artists || item.singers || []).map((a: any) => a.name || a.artist_name || '').filter(Boolean);
+      const artists = (item.artists || item.singers || [])
+        .map((a: any) => a.name || a.artist_name || '')
+        .filter(Boolean);
       const artist = artists.join(' / ') || item.artist || '';
       const album = item.album?.name || item.album_name || '';
-      const cover = item.cover?.url_list?.[0] || item.album?.cover?.url_list?.[0] || '';
+      const cover =
+        item.album?.url_cover?.urls?.[0] ||
+        item.cover?.url_list?.[0] ||
+        item.album?.cover?.url_list?.[0] ||
+        '';
       const duration = Number(item.duration || item.duration_ms || 0);
       return {
         id: `qishui:${id}`,

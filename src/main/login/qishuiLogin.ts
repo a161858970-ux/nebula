@@ -626,12 +626,14 @@ export class QishuiLogin {
     // 尝试从 API 获取昵称
     let nickname = '';
     let avatar = '';
+    let apiUserId = '';
     try {
       const me = await this.fetchMeInfo(cookie);
       console.log('[QishuiLogin] getAccount: fetchMeInfo 返回:', JSON.stringify(me));
       if (me) {
         nickname = me.nickname || '';
         avatar = me.avatar || '';
+        apiUserId = me.id || '';
       }
     } catch (err) {
       console.log('[QishuiLogin] getAccount: fetchMeInfo 异常:', err);
@@ -639,7 +641,7 @@ export class QishuiLogin {
 
     return {
       loggedIn: true,
-      userId,
+      userId: apiUserId || userId,
       nickname: nickname || '汽水用户',
       avatarUrl: avatar,
       vipType: 0,
@@ -649,7 +651,7 @@ export class QishuiLogin {
   }
 
   /** 调用 /luna/pc/me 获取账号信息 */
-  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string } | null> {
+  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string; id?: string } | null> {
     try {
       const params = this.pcAppParams();
       const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -665,10 +667,12 @@ export class QishuiLogin {
         },
       });
       const json = await res.json() as any;
-      const data = json?.data || json || {};
+      // 实测结构：{ status_info, my_info: { id, nickname, larger_avatar_url: { urls: [...] } } }
+      const data = json?.my_info || json?.data?.my_info || json || {};
       return {
-        nickname: data.nickname || data.nick_name || '',
-        avatar: data.avatar || data.avatar_url || '',
+        id: String(data.id || ''),
+        nickname: data.nickname || data.nick_name || data.public_name || '',
+        avatar: data.larger_avatar_url?.urls?.[0] || data.avatar || data.avatar_url || '',
       };
     } catch {
       return null;

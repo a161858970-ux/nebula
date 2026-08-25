@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-08-25 — 汽水登录成功 + 昵称/歌单数据映射修复
+
+**目标**
+
+登录链路已通（无二次验证直接成功，14 个凭证字段落盘），但账号昵称为空、歌单显示零首。用真实登录 cookie 直连接口核对数据结构后修复映射。
+
+**改动**
+
+- `qishuiLogin.ts`：`fetchMeInfo` 改为解析实测结构 `my_info.nickname / my_info.larger_avatar_url.urls[0]`；`getAccount` 用 `my_info.id` 作为 userId（cookie 无 uid_v2/uid 时不再返回空昵称）。
+- `qishuiAdapter.ts`：
+  - `fetchMyPlaylists` 改用实测可用的 `/luna/pc/me/playlist`（顶层 `playlists`），字段 `title / url_cover.urls[0] / count_tracks`；收藏歌单兜底同步兼容。
+  - `fetchPlaylist` 改为顶层 `playlist` + `media_resources[].entity.track_wrapper.track` 映射（此前解析 `data.playlist.tracks` 恒为空）。
+  - `mapTrack` 适配真实歌曲结构（artists[].name / album.url_cover.urls / duration 毫秒兼容）。
+
+**验证**
+
+- 真实 cookie 直连：`/luna/pc/me` 返回 `my_info`（昵称 Violet Snow）；`/luna/pc/me/playlist` 返回 3 个歌单（含"我喜欢的音乐"54 首）；playlist/detail 返回 `media_resources`。tsc / qa:backend 全绿。
+
+**遗留与风险**
+
+- `track_v2` 与 `search/track` 在当前网络/账号下返回 HTTP 200 空 body（Mineradio 同参数亦如此，疑似账号权限或风控）；取链与搜索待专项排查（搜索暂走 volcengine 公开兜底）。
+- 播放音源待接入（`#auth=` 加密流解密为已确认待办，方案 C）。
+
 ## 2026-08-25 — 汽水登录第四轮回修：mcs 埋点 TLS 指纹风控绕过
 
 **目标**
