@@ -360,9 +360,14 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
       pollTimer = setInterval(async () => {
         try {
           const data = await qishuiLogin.checkQrConnect(token);
-          console.log('[汽水登录] 轮询返回:', JSON.stringify({ status: data.status, error_code: data.error_code, hasSessionCookie: !!data.session_cookie }));
-          // error_code 2156 = token 已消费（用户确认后），视为成功
-          if (data.status === '3' || data.status === 'confirmed' || Number(data.error_code) === 2156) {
+          console.log('[汽水登录] 轮询返回:', JSON.stringify({
+            status: data.status,
+            error_code: data.error_code,
+            hasSessionCookie: !!data.session_cookie,
+            loginOk: data._loginOk === true,
+          }));
+          // 成功判定以 qishuiLogin 内部单一真源为准（含凭证校验 + cookie 持久化）
+          if (data._loginOk === true) {
             finish({ ok: true, message: '汽水音乐登录成功' });
           } else if (data.status === 'scanned') {
             win.webContents.executeJavaScript('document.getElementById("status").textContent = "已扫码，请在手机上确认"');

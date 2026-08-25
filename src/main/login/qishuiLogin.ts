@@ -237,7 +237,31 @@ export class QishuiLogin {
     if (aBogus.length !== 44) {
       throw new Error('汽水安全参数注入失败：a_bogus 缺失');
     }
+    // 补充捕获：XHR 响应头的 Set-Cookie 直接并入（onHeadersReceived 可能因 URL 模式漏匹配）
+    const setCookies = this.parseSetCookieHeader(String(response.headers || ''));
+    if (setCookies.length) {
+      console.log('[QishuiLogin] request 响应头 Set-Cookie:', setCookies.map((c) => c.name).join(', '));
+      for (const c of setCookies) {
+        if (c.name && c.value) this.capturedCookies[c.name] = c.value;
+      }
+    }
     return envelope;
+  }
+
+  /** 解析 getAllResponseHeaders 文本中的 Set-Cookie（可能多行，每行独立 cookie）。 */
+  private parseSetCookieHeader(raw: string): Array<{ name: string; value: string }> {
+    const out: Array<{ name: string; value: string }> = [];
+    for (const line of String(raw || '').split(/\r?\n/)) {
+      const m = /^set-cookie:\s*(.+)$/i.exec(line.trim());
+      if (!m) continue;
+      const sc = m[1]!;
+      const eq = sc.indexOf('=');
+      if (eq <= 0) continue;
+      const name = sc.slice(0, eq).trim();
+      const value = sc.slice(eq + 1).split(';')[0]!.trim();
+      if (name && value) out.push({ name, value });
+    }
+    return out;
   }
 
   /** 生成二维码 */
@@ -259,7 +283,9 @@ export class QishuiLogin {
   }
 
   /** 轮询扫码状态 */
-  async checkQrConnect(token: string): Promise<{ status: string; error_code: number; session_cookie?: string }> {
+  async checkQrConnect(
+    token: string,
+  ): Promise<{ status: string; error_code: number; session_cookie?: string; _loginOk?: boolean }> {
     const identity = this.ensureIdentity();
     const body: Record<string, any> = {
       need_logo: 'false',
@@ -310,34 +336,84 @@ export class QishuiLogin {
       }
     }
 
-    // 登录成功，收集 cookie
-    // error_code 2156 = token 已消费（用户确认后），也视为成功
-    const isSuccess = (Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed' || data.session_cookie))
-      || Number(data.error_code) === 2156;
+    // 登录成功判定（单一真源）：
+    // - error_code 0 且 status 3/confirmed（标准成功）
+    // - error_code 2156（token 已消费）必须同时拿到会话凭证才算成功，避免中间态误报
+    const hasCredential =
+      !!data.session_cookie || Object.keys(this.capturedCookies).some((k) => this.isSessionCookieName(k));
+    const isSuccess =
+      (Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed')) ||
+      (Number(data.error_code) === 2156 && hasCredential);
     console.log('[QishuiLogin] checkQrConnect 判断:', JSON.stringify({
       error_code: data.error_code,
       status: data.status,
       hasSessionCookie: !!data.session_cookie,
       sessionCookieLength: (data.session_cookie || '').length,
+      capturedFields: Object.keys(this.capturedCookies).join(', '),
+      hasCredential,
       isSuccess,
     }));
     if (isSuccess) {
       console.log('[QishuiLogin] 登录成功，收集 cookie');
       // 直接从 session 收集 cookie（不导航，避免 session 重置）
-      await this.persistSessionCookies(data.session_cookie || '');
+      await this.persistSessionCookies(data.session_cookie || '', envelope);
+      data._loginOk = true;
+    } else {
+      console.log(
+        '[QishuiLogin] checkQrConnect 未判定成功，完整 envelope:',
+        JSON.stringify(envelope).slice(0, 1500),
+      );
     }
     console.log('[QishuiLogin] checkQrConnect 返回:', JSON.stringify({ error_code: data.error_code, status: data.status, hasSessionCookie: !!data.session_cookie, isSuccess }));
     return data;
   }
 
+  /** 判断是否会话凭证类 cookie（排除 csrf/匿名/区域类）。 */
+  private isSessionCookieName(name: string): boolean {
+    return (
+      !/csrf|anonymous|reg-store|anonymous_token/i.test(name) &&
+      /^(uid|session|sid|passport_|tt_|s_v_web_id|store-id|odin_tt|sid_guard|uid_tt|uid_v2|sessionid)/i.test(name)
+    );
+  }
+
   /** 持久化会话 cookie */
-  private async persistSessionCookies(sessionCookie: string): Promise<void> {
+  private async persistSessionCookies(sessionCookie: string, extra?: any): Promise<void> {
     console.log('[QishuiLogin] persistSessionCookies 收到 session_cookie 长度:', sessionCookie.length);
     const current = parseCookieString(this.cookies.get('qishui')?.cookies || '');
     // 合并 API 返回的 session_cookie
     const newCookies = parseCookieString(sessionCookie);
     console.log('[QishuiLogin] session_cookie 包含字段:', Object.keys(newCookies).join(', '));
     Object.assign(current, newCookies);
+
+    // 兜底：扫描 envelope 深层字段中的 "name=value; ..." 形状字符串（凭证可能在 data 的其它字段）
+    if (extra != null) {
+      const scan = new Set<string>();
+      const walk = (node: unknown): void => {
+        if (!node || typeof node !== 'object') return;
+        for (const v of Object.values(node as Record<string, unknown>)) {
+          if (typeof v === 'string') {
+            if (/^[\w.-]+=[^;]+(?:;\s*[\w.-]+=[^;]+)*$/.test(v.trim())) {
+              const parsed = parseCookieString(v);
+              for (const [k, val] of Object.entries(parsed)) {
+                if (val && this.isSessionCookieName(k)) {
+                  scan.add(`${k}=${val}`);
+                }
+              }
+            }
+          } else if (v && typeof v === 'object') {
+            walk(v);
+          }
+        }
+      };
+      walk(extra);
+      if (scan.size) {
+        console.log('[QishuiLogin] envelope 深层扫描到凭证字段:', Array.from(scan).map((s) => s.split('=')[0]).join(', '));
+        for (const kv of scan) {
+          const eq = kv.indexOf('=');
+          current[kv.slice(0, eq)] = kv.slice(eq + 1);
+        }
+      }
+    }
 
     // 方案A核心：合并通过 onHeadersReceived 手动拦截到的 Set-Cookie 凭证（最关键）
     const capturedEntries = Object.entries(this.capturedCookies);
@@ -354,16 +430,19 @@ export class QishuiLogin {
     if (this.authSession) {
       const sessionCookies = await this.authSession.cookies.get({});
       console.log('[QishuiLogin] authSession cookies 总数:', sessionCookies.length);
+      console.log(
+        '[QishuiLogin] authSession cookie 字段:',
+        sessionCookies.map((c: { name: string; value: string; domain?: string }) => `${c.name}@${c.domain}`).join(', '),
+      );
       for (const cookie of sessionCookies) {
         const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
-        // 收集所有非 csrf 的 cookie，重点是 session/token 类
-        if (!/csrf|anonymous/i.test(cookie.name)) {
+        if (this.isSessionCookieName(cookie.name)) {
           if (!current[cookie.name]) {
             current[cookie.name] = cookie.value;
             console.log('[QishuiLogin] 收集 authSession cookie:', cookie.name, '@', domain);
           }
         } else {
-          console.log('[QishuiLogin] 跳过 csrf cookie:', cookie.name);
+          console.log('[QishuiLogin] 跳过非凭证 cookie:', cookie.name);
         }
       }
     }
@@ -371,6 +450,8 @@ export class QishuiLogin {
     const cookieStr = buildCookieString(current);
     console.log('[QishuiLogin] 最终 cookie 长度:', cookieStr.length, '字段:', Object.keys(current).join(', '));
     this.cookies.set('qishui', cookieStr, this.msToken, '汽水音乐');
+    // 清空拦截缓存，避免下次登录混入旧凭证
+    this.capturedCookies = {};
   }
 
   /** 获取账号信息 */
@@ -383,11 +464,18 @@ export class QishuiLogin {
     const cookie = rec.cookies;
     console.log('[QishuiLogin] getAccount: cookie 长度:', cookie.length, '前200字符:', cookie.substring(0, 200));
 
-    // 提取用户信息
-    const userId = this.extractCookieValue(cookie, 'uid_v2') || this.extractCookieValue(cookie, 'uid') || '';
+    // 提取用户信息（汽水/抖音系凭证常见 uid_v2 / sessionid / sid_guard / uid_tt）
+    const sidGuard = this.extractCookieValue(cookie, 'sid_guard');
+    const userId =
+      this.extractCookieValue(cookie, 'uid_v2') ||
+      this.extractCookieValue(cookie, 'sessionid') ||
+      this.extractCookieValue(cookie, 'uid') ||
+      (sidGuard.split('|')[0] || '') ||
+      this.extractCookieValue(cookie, 'uid_tt') ||
+      '';
     console.log('[QishuiLogin] getAccount: uid_v2=', this.extractCookieValue(cookie, 'uid_v2'), 'uid=', this.extractCookieValue(cookie, 'uid'));
     if (!userId) {
-      console.log('[QishuiLogin] getAccount: 未找到 uid_v2 或 uid，返回 null');
+      console.log('[QishuiLogin] getAccount: 未找到登录态字段（uid_v2/sessionid/uid/sid_guard/uid_tt），返回 null');
       return null;
     }
 

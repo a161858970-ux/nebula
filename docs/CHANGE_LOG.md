@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-08-25 — 汽水音乐登录链路修复 + 酷狗修复系列补录
+
+**目标**
+
+1. 补录 2026-08-20 至 08-22 期间酷狗后端 11 个修复提交（上一阶段未同步本日志）。
+2. 汽水音乐登录半成品接入（签名引擎 + 扫码 + 适配器 + 前端入口）。
+3. 修复"登录显示成功但无账号/歌单、重开变未登录"问题。
+
+**补录：酷狗修复系列（b6ddb25..ef63215）**
+
+- 登录检测与 cookie 导入引导、双通道检测、cookie 字段名对齐（`KugooID`/`t`/`UserName`）、`spread` 实例丢失 `getAccount` 回归、扫码登录回归、请求方式对齐 mineradio 酷狗 H5 网关、登录持久化修复；`ef63215` 收尾，酷狗后端完整打通（阶段 0-2）。
+
+**汽水登录链路（工作区半成品，本次一并提交）**
+
+- `src/main/login/qishuiLogin.ts`：签名引擎登录（本地 HTTP server 托管 BDMS SDK `sdk-glue.js` + `security_host.html`；msToken + 浏览器指纹 + `a_bogus` 签名验证；getQrCode / checkQrConnect / 2046 二次验证 / cookie 持久化）。
+- `src/main/login/qishui-sign-engine/`：BDMS 签名引擎资源（sdk-glue.js / security_seed.html / security_host.html）。
+- `src/main/adapters/qishuiAdapter.ts`：PC 搜索 + volcengine 公开兜底、歌单详情/我的歌单（创建+收藏）、track_v2 取链（多音质）、歌词三源（SEO / track_v2 / volcengine）。
+- IPC `nebula:login:qishui:window`、preload `qishuiLoginWindow`、electron `createQishuiLoginWindow`（扫码窗口 + 轮询）、AccountDock `QishuiLogin` 组件、`createQishuiLoginAdapter` 替换占位符。
+
+**本次修复（登录成功但无账号/歌单、重开未登录）**
+
+- 成功判定单一真源：`checkQrConnect` 内部判定并持久化后置 `_loginOk`，electron 轮询只认该标志（此前两端判定不一致，可能"界面成功但未持久化"）。
+- `error_code 2156`（token 已消费）不再裸判成功：必须同时拿到会话凭证（body `session_cookie` 或捕获的 Set-Cookie）才算成功，避免中间态误报。
+- `request()` 补捕获 XHR 响应头 Set-Cookie（onHeadersReceived 可能因 URL 模式漏匹配），双保险并入 `capturedCookies`。
+- `persistSessionCookies` 增加 envelope 深层字段扫描（凭证可能在 data 其它字段）、收集后清空拦截缓存；authSession 收集过滤放宽为"会话凭证类"（csrf/anonymous/reg-store 排除）。
+- `getAccount` 字段扩展：`uid_v2 / sessionid / uid / sid_guard（取 \`|\` 前）/ uid_tt`。
+- 日志增强：轮询返回、envelope 结构、Set-Cookie 捕获、authSession 字段、判定依据均打印，便于实测定位。
+
+**验证**
+
+- pnpm exec tsc --noEmit / build:main / qa:backend（26/26）/ qa 全绿。
+
+**遗留与风险**
+
+- 登录凭证的真实下发字段需实测扫码确认（日志已备）；若成功响应凭证在其它位置，依日志继续调整。
+
 ## 2026-08-20 — 阶段 2：酷狗登录 + 用户歌单
 
 **目标**
