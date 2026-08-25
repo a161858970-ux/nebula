@@ -15,7 +15,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     qq: new QqAdapter(http, cookies),
     kugou: new KugouAdapter(http, cookies),
     spotify: new SpotifyAdapter(http, cookies),
-    qishui: new QishuiAdapter(http),
+    qishui: new QishuiAdapter(http, cookies),
   };
 }
 

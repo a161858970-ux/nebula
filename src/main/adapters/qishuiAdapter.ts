@@ -1,48 +1,250 @@
-import type { HttpClient } from '../http';
-import type { Lyric, Playlist, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+﻿import type { HttpClient } from '../http';
+import type { CookieStore } from '../cookieStore';
+import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
 
-/**
- * 汽水音乐适配器（阶段 0：仅歌词；登录/取链/歌单留阶段 1-2）。
- * 歌词三源兜底：
- *   1) beta-luna.douyin.com SEO（免登录，原生逐字）
- *   2) /luna/pc/track_v2（登录态，阶段 2 再接入）
- *   3) api-vehicle.volcengine.com 公开目录（免登录）
- */
+const PC_APP_PARAMS: Record<string, string> = {
+  aid: '386088',
+  app_name: 'luna_pc',
+  region: 'cn',
+  geo_region: 'cn',
+  os_region: 'cn',
+  channel: 'official',
+  build_mode: 'master',
+  ac: 'wifi',
+  tz_name: 'Asia/Shanghai',
+  device_platform: 'windows',
+  device_type: 'Windows',
+  os_version: 'Windows 11',
+};
+
+function pcParams(extra: Record<string, string> = {}): Record<string, string> {
+  const now = String(Date.now());
+  return {
+    ...PC_APP_PARAMS,
+    device_id: now,
+    cdid: '',
+    iid: String(Number(now) + 1),
+    version_name: '3.3.0',
+    version_code: '30030000',
+    fp: now,
+    ...extra,
+  };
+}
+
+function pcHeaders(cookie?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Accept': 'application/json,text/plain,*/*',
+    'User-Agent': 'LunaPC/3.3.0(359450208)',
+    'x-luna-background-type': 'foreground',
+    'x-luna-is-background-req': '0',
+    'x-luna-is-local-user': '1',
+  };
+  if (cookie) headers.Cookie = cookie;
+  return headers;
+}
+
+/** 汽水音质等级 */
+const QISHUI_QUALITY_TIERS: Array<{ level: string; label: string }> = [
+  { level: 'hires', label: 'Hi-Res' },
+  { level: 'lossless', label: '无损 FLAC' },
+  { level: 'exhigh', label: '极高 320k' },
+  { level: 'standard', label: '标准 128k' },
+];
+
 export class QishuiAdapter implements PlatformAdapter {
   readonly platform = 'qishui' as const;
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private cookies: CookieStore,
+  ) {}
 
-  async fetchPlaylist(_playlistId: string): Promise<Playlist> {
-    throw new Error('汽水歌单功能暂未实现（需要登录态，阶段 2 接入）');
+  /** 获取登录 cookie */
+  private getCookie(): string {
+    return this.cookies.getHeader('qishui') || '';
   }
 
-  async searchSongs(_keyword: string, _pageSize?: number): Promise<Track[]> {
-    // 阶段 0 不实现搜索；后续走 /luna/pc/search/track
-    return [];
+  /** PC API 请求（带 cookie + PC 参数） */
+  private async pcRequest<T>(apiPath: string, params: Record<string, string> = {}, cookie?: string): Promise<T> {
+    const qs = Object.entries({ ...pcParams(), ...params })
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
+    const url = `https://api.qishui.com${apiPath}?${qs}`;
+    return this.http.requestJson<T>(url, {
+      platform: 'qishui',
+      headers: pcHeaders(cookie || this.getCookie()),
+    });
   }
 
-  async fetchSongUrl(_songId: string, _albumId?: string, _quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
-    throw new Error('汽水取链功能暂未实现（需要登录态 + 音频解密，阶段 2 接入）');
+  /** 搜索歌曲（PC 搜索优先，公开搜索兜底） */
+  async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    // 1) PC 搜索（需 cookie）
+    const cookie = this.getCookie();
+    if (cookie) {
+      try {
+        const data = await this.pcRequest<any>('/luna/pc/search/track', {
+          q: keyword,
+          cursor: '0',
+          count: String(pageSize),
+          search_method: 'input',
+        }, cookie);
+        const groups = data?.data?.result_groups || [];
+        const items: any[] = [];
+        for (const group of groups) {
+          const groupData = group?.data || group?.items || group?.list;
+          if (Array.isArray(groupData)) items.push(...groupData);
+        }
+        if (items.length) {
+          return items.slice(0, pageSize).map((item: any) => this.mapTrack(item)).filter(Boolean) as Track[];
+        }
+      } catch (err) {
+        console.warn('[QishuiAdapter] PC 搜索失败:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    // 2) 公开搜索（免登录）
+    try {
+      const url = `https://api-vehicle.volcengine.com/v2/search/type?keyword=${encodeURIComponent(keyword)}&search_type=music&limit=${pageSize}&real_offset=0&search_source=qishui`;
+      const data = await this.http.requestJson<any>(url, {
+        platform: 'qishui',
+        headers: { 'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)' },
+      });
+      const list = data?.data?.list || [];
+      return list.map((item: any) => this.mapPublicTrack(item)).filter(Boolean) as Track[];
+    } catch (err) {
+      console.warn('[QishuiAdapter] 公开搜索失败:', err instanceof Error ? err.message : err);
+      return [];
+    }
   }
 
+  /** 获取歌单详情 */
+  async fetchPlaylist(playlistId: string): Promise<Playlist> {
+    const cookie = this.getCookie();
+    if (!cookie) throw new Error('汽水歌单需要登录');
+    const data = await this.pcRequest<any>('/luna/pc/playlist/detail', {
+      playlist_id: playlistId,
+      cursor: '0',
+      count: '300',
+    }, cookie);
+    const playlist = data?.data || {};
+    const tracks = (playlist.tracks || []).map((t: any) => this.mapTrack(t)).filter(Boolean) as Track[];
+    return {
+      id: playlistId,
+      platform: 'qishui',
+      name: playlist.title || playlist.name || '汽水歌单',
+      cover: playlist.cover?.url_list?.[0] || playlist.cover || '',
+      tracks,
+    };
+  }
+
+  /** 获取播放 URL（多音质） */
+  async fetchSongUrl(songId: string, _albumId?: string, quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
+    const cookie = this.getCookie();
+    if (!cookie) throw new Error('汽水取链需要登录');
+
+    const data = await this.pcRequest<any>('/luna/pc/track_v2', {
+      track_id: songId,
+      media_type: 'track',
+    }, cookie);
+
+    const track = data?.data?.track || data?.data?.track_info || {};
+    const audioInfo = track.audio_info || {};
+    const playInfoList = audioInfo.play_info_list || [];
+
+    // 选择最佳音质
+    const streams = playInfoList.map((info: any) => ({
+      url: info.play_url || info.url || '',
+      quality: info.quality || info.format || '',
+      bitrate: Number(info.bitrate) || 0,
+      size: Number(info.file_size) || 0,
+    })).filter((s: any) => s.url);
+
+    // 按音质排序
+    const targetQuality = quality || 'standard';
+    const sorted = streams.sort((a: any, b: any) => {
+      const aIdx = QISHUI_QUALITY_TIERS.findIndex(t => t.level === a.quality);
+      const bIdx = QISHUI_QUALITY_TIERS.findIndex(t => t.level === b.quality);
+      const targetIdx = QISHUI_QUALITY_TIERS.findIndex(t => t.level === targetQuality);
+      return Math.abs(aIdx - targetIdx) - Math.abs(bIdx - targetIdx);
+    });
+
+    const best = sorted[0];
+    if (!best?.url) return null;
+
+    return {
+      url: best.url,
+      quality: best.quality || targetQuality,
+      level: best.quality || targetQuality,
+      playable: true,
+    };
+  }
+
+  /** 获取用户歌单列表 */
+  async fetchMyPlaylists(): Promise<PlaylistSummary[]> {
+    const cookie = this.getCookie();
+    if (!cookie) return [];
+
+    const playlists: PlaylistSummary[] = [];
+
+    // 1) 我创建的歌单
+    try {
+      const data = await this.pcRequest<any>('/luna/pc/user/playlist', {
+        user_id: '',
+        cursor: '0',
+        count: '50',
+      }, cookie);
+      const items = data?.data?.playlists || [];
+      for (const pl of items) {
+        playlists.push({
+          id: String(pl.id || pl.playlist_id || ''),
+          name: pl.title || pl.name || '汽水歌单',
+          cover: pl.cover?.url_list?.[0] || pl.cover || '',
+          trackCount: Number(pl.track_count || pl.song_count || 0),
+        });
+      }
+    } catch (err) {
+      console.warn('[QishuiAdapter] 创建歌单获取失败:', err instanceof Error ? err.message : err);
+    }
+
+    // 2) 收藏歌单
+    try {
+      const data = await this.pcRequest<any>('/luna/pc/me/collection/mixed', {
+        cursor: '0',
+        count: '50',
+      }, cookie);
+      const items = data?.data?.playlists || [];
+      for (const pl of items) {
+        if (!playlists.some(p => p.id === String(pl.id || pl.playlist_id))) {
+          playlists.push({
+            id: String(pl.id || pl.playlist_id || ''),
+            name: pl.title || pl.name || '收藏歌单',
+            cover: pl.cover?.url_list?.[0] || pl.cover || '',
+            trackCount: Number(pl.track_count || pl.song_count || 0),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[QishuiAdapter] 收藏歌单获取失败:', err instanceof Error ? err.message : err);
+    }
+
+    return playlists;
+  }
+
+  /** 获取可用音质列表 */
   async listQualities(): Promise<QualityOption[]> {
-    return [];
+    return QISHUI_QUALITY_TIERS.map(t => ({
+      level: t.level,
+      label: t.label,
+    }));
   }
 
-  /**
-   * 歌词三源兜底：SEO → track_v2（登录态，阶段 2） → volcengine 公开目录。
-   * @param trackId 汽水歌曲 ID（纯数字）
-   */
+  /** 歌词三源兜底 */
   async fetchLyric(trackId: string): Promise<Lyric | null> {
     // 1) SEO seo_track（免登录，原生逐字，首选）
     try {
       const seoUrl = `https://beta-luna.douyin.com/luna/h5/seo_track?id=${trackId}`;
-      const seoData = await this.http.requestJson<{
-        lyric_text?: string;
-        translated_lyric?: string;
-      }>(seoUrl, {
+      const seoData = await this.http.requestJson<any>(seoUrl, {
         platform: 'qishui',
         headers: { Referer: 'https://www.qishui.com/' },
       });
@@ -55,29 +257,46 @@ export class QishuiAdapter implements PlatformAdapter {
           lrc,
           tlyric: seoData?.translated_lyric || undefined,
           translationRaw: seoData?.translated_lyric || undefined,
+          yrc: seoData?.lyric_text || undefined,
         };
       }
     } catch (err) {
       console.warn('[QishuiAdapter] SEO 歌词失败:', err instanceof Error ? err.message : err);
     }
 
-    // 2) /luna/pc/track_v2（登录态，阶段 2 再接入）
-    // TODO: 阶段 2 实现 — 需要登录 cookie
+    // 2) /luna/pc/track_v2（登录态）
+    const cookie = this.getCookie();
+    if (cookie) {
+      try {
+        const data = await this.pcRequest<any>('/luna/pc/track_v2', {
+          track_id: trackId,
+          media_type: 'track',
+        }, cookie);
+        const track = data?.data?.track || data?.data?.track_info || {};
+        const lyricInfo = track.lyric_info || {};
+        const lrc = lyricInfo.lyric_text || lyricInfo.content || '';
+        if (lrc) {
+          return {
+            lines: parseLrc(lrc),
+            raw: lrc,
+            source: 'qishui',
+            lrc,
+            tlyric: lyricInfo.translated_lyric || undefined,
+            translationRaw: lyricInfo.translated_lyric || undefined,
+            yrc: lrc,
+          };
+        }
+      } catch (err) {
+        console.warn('[QishuiAdapter] track_v2 歌词失败:', err instanceof Error ? err.message : err);
+      }
+    }
 
-    // 3) volcengine 公开目录（免登录，仅元数据/歌词）
+    // 3) volcengine 公开目录（免登录）
     try {
       const volUrl = `https://api-vehicle.volcengine.com/v2/custom/contents?sources=qishui&need_author=true&need_album=true&need_ugc=true&need_stat=true&item_ids=${trackId}`;
-      const volData = await this.http.requestJson<{
-        data?: Array<{
-          lyric_text?: string;
-          translated_lyric?: string;
-          title?: string;
-        }>;
-      }>(volUrl, {
+      const volData = await this.http.requestJson<any>(volUrl, {
         platform: 'qishui',
-        headers: {
-          'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)',
-        },
+        headers: { 'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)' },
       });
       const item = volData?.data?.[0];
       const lrc = item?.lyric_text;
@@ -96,5 +315,57 @@ export class QishuiAdapter implements PlatformAdapter {
     }
 
     return null;
+  }
+
+  /** 映射 PC API 歌曲 */
+  private mapTrack(item: any): Track | null {
+    try {
+      const id = String(item.id || item.track_id || '');
+      if (!id) return null;
+      const title = item.title || item.name || '';
+      const artists = (item.artists || item.singers || []).map((a: any) => a.name || a.artist_name || '').filter(Boolean);
+      const artist = artists.join(' / ') || item.artist || '';
+      const album = item.album?.name || item.album_name || '';
+      const cover = item.cover?.url_list?.[0] || item.album?.cover?.url_list?.[0] || '';
+      const duration = Number(item.duration || item.duration_ms || 0);
+      return {
+        id: `qishui:${id}`,
+        title,
+        artist,
+        artists,
+        album,
+        cover,
+        duration: duration > 1000 ? Math.round(duration / 1000) : duration,
+        platform: 'qishui',
+        sourceId: id,
+        originalUrl: '',
+        fallbackUrl: '',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 映射公开搜索歌曲 */
+  private mapPublicTrack(item: any): Track | null {
+    try {
+      const id = String(item.id || '');
+      if (!id) return null;
+      return {
+        id: `qishui:${id}`,
+        title: item.title || item.name || '',
+        artist: item.author || item.artist || '',
+        artists: item.artists?.map((a: any) => a.name || '') || [],
+        album: item.album?.name || '',
+        cover: item.cover?.url_list?.[0] || '',
+        duration: Number(item.duration || 0),
+        platform: 'qishui',
+        sourceId: id,
+        originalUrl: '',
+        fallbackUrl: '',
+      };
+    } catch {
+      return null;
+    }
   }
 }

@@ -327,6 +327,7 @@ function PlatformLogin({
   if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
   if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
   if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
+  if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
   return <div className="pf-flow"><div className="pf-status">暂不支持该平台登录</div></div>;
 }
@@ -417,6 +418,39 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
         </>
       )}
       {status && <div className="pf-status">{status}</div>}
+    </div>
+  );
+}
+
+/** 汽水音乐：签名引擎 + 扫码登录。 */
+function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const openWindow = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    setBusy(true);
+    setStatus('正在初始化签名引擎，请稍候…');
+    try {
+      const r = await window.nebulaAPI.qishuiLoginWindow();
+      const data = r.ok ? r.data : null;
+      if (data?.ok) {
+        setStatus(data.message ?? '登录成功');
+        onSuccess();
+      } else {
+        setStatus(data?.error ?? '登录窗口已关闭');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [onSuccess]);
+
+  return (
+    <div className="pf-flow">
+      <div className="pf-status">{status || '未登录汽水音乐'}</div>
+      <button className="glass-btn" disabled={busy} onClick={openWindow}>
+        {busy ? '正在初始化…' : '打开汽水登录页'}
+      </button>
     </div>
   );
 }

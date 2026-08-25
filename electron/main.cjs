@@ -17,9 +17,10 @@ const {
   NeteaseLogin,
   QqLogin,
   KugouLogin,
+  QishuiLogin,
   QqRightsService,
   createKugouLoginAdapter,
-  qishuiLoginAdapter,
+  createQishuiLoginAdapter,
   AudioProxy,
   LyricCache,
   WallpaperLibrary,
@@ -288,6 +289,96 @@ function createKugouLoginWindow(cookies, kugouLogin) {
   });
 }
 
+function createQishuiLoginWindow(cookies, qishuiLogin) {
+  return new Promise(async (resolve) => {
+    try {
+      // 使用签名引擎生成二维码
+      const qrResult = await qishuiLogin.getQrCode();
+      const token = qrResult.token;
+      const scanUrl = qrResult.scanUrl;
+
+      // 创建显示二维码的窗口
+      const win = new BrowserWindow({
+        width: 500,
+        height: 600,
+        backgroundColor: '#ffffff',
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      });
+      win.setTitle('汽水音乐登录（扫码）');
+
+      // 生成二维码 HTML
+      const qrHtml = `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; background: #fff; }
+    img { width: 300px; height: 300px; }
+    p { margin-top: 20px; color: #666; font-size: 14px; }
+    .status { color: #333; font-size: 16px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <img id="qr" src="" alt="二维码">
+  <p>请使用汽水音乐 App 扫码登录</p>
+  <div class="status" id="status">等待扫码...</div>
+</body>
+</html>`;
+      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(qrHtml)}`);
+
+      // 等待页面加载后设置二维码图片
+      win.webContents.on('did-finish-load', async () => {
+        try {
+          // 使用 qrcode 库生成二维码图片
+          const QRCode = require('qrcode');
+          const qrDataUrl = await QRCode.toDataURL(scanUrl, {
+            errorCorrectionLevel: 'M',
+            margin: 2,
+            width: 300,
+          });
+          win.webContents.executeJavaScript(`document.getElementById('qr').src = '${qrDataUrl}'`);
+        } catch (err) {
+          console.warn('[汽水登录] 二维码生成失败:', err);
+        }
+      });
+
+      let settled = false;
+      let pollTimer = null;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        if (pollTimer) clearInterval(pollTimer);
+        if (win && !win.isDestroyed()) win.close();
+        resolve(result);
+      };
+
+      // 轮询扫码状态
+      pollTimer = setInterval(async () => {
+        try {
+          const data = await qishuiLogin.checkQrConnect(token);
+          console.log('[汽水登录] 轮询返回:', JSON.stringify({ status: data.status, error_code: data.error_code, hasSessionCookie: !!data.session_cookie }));
+          // error_code 2156 = token 已消费（用户确认后），视为成功
+          if (data.status === '3' || data.status === 'confirmed' || Number(data.error_code) === 2156) {
+            finish({ ok: true, message: '汽水音乐登录成功' });
+          } else if (data.status === 'scanned') {
+            win.webContents.executeJavaScript('document.getElementById("status").textContent = "已扫码，请在手机上确认"');
+          }
+        } catch (err) {
+          console.warn('[汽水登录] 轮询失败:', err);
+        }
+      }, 2000);
+
+      win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
+    } catch (err) {
+      resolve({ ok: false, error: err instanceof Error ? err.message : '汽水登录初始化失败' });
+    }
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -472,6 +563,7 @@ app.whenReady().then(() => {
   const login = new NeteaseLogin(http, cookies);
   const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
   const kugouLogin = new KugouLogin(cookies);
+  const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -495,7 +587,7 @@ app.whenReady().then(() => {
       getMyPlaylists: () => qqLogin.getMyPlaylists(),
     },
     kugou: createKugouLoginAdapter({ getAccount: () => kugouLogin.getAccount(), getMyPlaylists: () => adapters.kugou.fetchMyPlaylists() }),
-    qishui: qishuiLoginAdapter,
+    qishui: createQishuiLoginAdapter({ getAccount: () => qishuiLogin.getAccount(), getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
     spotify: {
       platform: 'spotify',
       name: 'Spotify',
@@ -519,6 +611,7 @@ app.whenReady().then(() => {
     spotifyOAuth: createSpotifyOAuth(cookies),
     qqLoginWindow: () => createQqLoginWindow(cookies),
     kugouLoginWindow: () => createKugouLoginWindow(cookies, kugouLogin),
+    qishuiLoginWindow: () => createQishuiLoginWindow(cookies, qishuiLogin),
     wallpaperLibrary,
     // 退出登录时同步清空 QQ 官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。

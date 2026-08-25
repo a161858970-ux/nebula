@@ -1,0 +1,519 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import type { CookieStore } from '../cookieStore';
+import type { AccountInfo } from '../types';
+
+const API_BASE = 'https://api.qishui.com';
+const AID = '386088';
+const APP_VERSION = '3.3.0';
+const SDK_VERSION = '2.4.13';
+const VERIFY_SDK_VERSION = '1.0.29';
+const SECURE_SDK_VERSION = '3.3.5';
+const BDMS_VERSION = '1.0.0.41';
+const AUTH_PARTITION = 'persist:nebula-qishui-auth';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SodaMusic/3.1.0 Chrome/136.0.7103.59 Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
+
+/** 解码 cookie 字符串 */
+function parseCookieString(raw: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const part of String(raw || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    result[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+  }
+  return result;
+}
+
+/** 构建 cookie 字符串 */
+function buildCookieString(obj: Record<string, string>): string {
+  return Object.entries(obj).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+export class QishuiLogin {
+  private window: any = null;
+  private authSession: any = null;
+  private msToken = '';
+  private browserInfo: any = null;
+  private initialized = false;
+  private lastPassportRequest: { url: string } | null = null;
+  private assetServer: http.Server | null = null;
+  private assetBase = '';
+  /** 设备身份：整个登录会话内保持一致，避免服务端认为是不同设备 */
+  private identity: { deviceId: string; installId: string; computerName: string; verifyPortraitId: string } | null = null;
+
+  constructor(
+    private cookies: CookieStore,
+    private electronModules: { BrowserWindow: any; session: any },
+  ) {}
+
+  /** 启动本地 HTTP server 托管签名引擎 HTML（必须用 HTTP 而非 file://，否则 XHR cookie 不写入 session） */
+  private async startAssetServer(): Promise<void> {
+    if (this.assetServer) return;
+    const enginePath = path.join(__dirname, '../src/main/login/qishui-sign-engine');
+    const mimeTypes: Record<string, string> = {
+      '.html': 'text/html',
+      '.js': 'application/javascript',
+    };
+    this.assetServer = http.createServer((req, res) => {
+      const urlPath = (req.url || '/').split('?')[0];
+      const filePath = path.join(enginePath, urlPath === '/' ? 'security_seed.html' : urlPath);
+      const ext = path.extname(filePath);
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      try {
+        const content = fs.readFileSync(filePath);
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content);
+      } catch {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+    await new Promise<void>((resolve) => {
+      this.assetServer!.listen(0, '127.0.0.1', () => {
+        const addr = this.assetServer!.address() as any;
+        this.assetBase = `http://127.0.0.1:${addr.port}/`;
+        resolve();
+      });
+    });
+  }
+
+  /** 初始化签名引擎（隐藏 BrowserWindow + BDMS SDK） */
+  private async initSignEngine(): Promise<void> {
+    if (this.initialized) return;
+
+    await this.startAssetServer();
+    const { BrowserWindow, session } = this.electronModules;
+    const ses = session.fromPartition(AUTH_PARTITION);
+    this.authSession = ses;
+
+    // 安装请求拦截（捕获 BDMS 签名后的 URL）
+    ses.webRequest.onBeforeRequest({ urls: ['https://api.qishui.com/passport/*'] }, (details: any, callback: any) => {
+      this.lastPassportRequest = { url: details.url };
+      callback({ cancel: false });
+    });
+
+    // 创建隐藏窗口
+    this.window = new BrowserWindow({
+      show: false,
+      width: 980,
+      height: 760,
+      webPreferences: {
+        partition: AUTH_PARTITION,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: false,
+        backgroundThrottling: false,
+      },
+    });
+    this.window.setMenuBarVisibility(false);
+    this.window.webContents.setUserAgent(UA);
+
+    // 关闭时隐藏而非销毁
+    this.window.on('close', (event: any) => {
+      event.preventDefault();
+      this.window?.webContents.executeJavaScript(
+        'window.__qishuiCancelSecondVerify && window.__qishuiCancelSecondVerify()',
+      ).catch(() => {});
+      this.window?.hide();
+    });
+
+    // 加载签名引擎 HTML（从本地 HTTP server，确保 XHR cookie 写入 session）
+    // 1. 加载 seed 页面设置 msToken
+    await this.window.loadURL(this.assetBase + 'security_seed.html');
+    let storedToken = await this.window.webContents.executeJavaScript(
+      `localStorage.getItem('xmsty') || localStorage.getItem('xmst') || ''`,
+      true,
+    );
+    if (!/^[A-Za-z0-9_-]{118}==$/.test(String(storedToken || ''))) {
+      storedToken = crypto.randomBytes(88).toString('base64url') + '==';
+    }
+    this.msToken = String(storedToken);
+    await this.window.webContents.executeJavaScript(
+      `localStorage.setItem('xmst', ${JSON.stringify(this.msToken)});
+       localStorage.setItem('xmsty', ${JSON.stringify(this.msToken)}); true`,
+      true,
+    );
+
+    // 2. 加载 host 页面（BDMS SDK）
+    await this.window.loadURL(this.assetBase + 'security_host.html');
+    await this.waitForBdms();
+
+    // 3. 获取浏览器指纹
+    this.browserInfo = await this.window.webContents.executeJavaScript('window.__qishuiBrowserInfo()', true);
+    this.initialized = true;
+  }
+
+  /** 等待 BDMS SDK 就绪 */
+  private async waitForBdms(timeoutMs = 20000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const status = await this.window!.webContents.executeJavaScript(`({
+        loaded: Boolean(window.bdms),
+        glue: window._sdkGlueVersionMap && window._sdkGlueVersionMap.sdkGlueVersion,
+      })`);
+      if (status && status.loaded) return;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    throw new Error('汽水安全组件初始化超时：bdms 未就绪');
+  }
+
+  /** 通用 passport 请求（通过签名引擎） */
+  private async request(method: string, pathname: string, params: Record<string, any> = {}, data?: Record<string, any>): Promise<any> {
+    await this.initSignEngine();
+    const identity = this.ensureIdentity();
+    const query: Record<string, any> = { ...this.commonParams(identity), ...params };
+    const url = new URL(pathname, API_BASE);
+    for (const [name, value] of Object.entries(query)) {
+      if (value != null) url.searchParams.set(name, String(value));
+    }
+    const headers = this.requestHeaders(identity, query.biz_trace_id);
+    let body: string | null = null;
+    if (data != null) {
+      const bodyParams = new URLSearchParams();
+      for (const [name, value] of Object.entries(data)) {
+        if (value != null) bodyParams.set(name, typeof value === 'object' ? JSON.stringify(value) : String(value));
+      }
+      body = bodyParams.toString();
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      headers['x-ss-stub'] = crypto.createHash('md5').update(body).digest('hex').toUpperCase();
+    }
+    const payload = {
+      method: method.toUpperCase(),
+      url: url.toString(),
+      headers,
+      body,
+      timeout: 30000,
+    };
+    const response = await this.window!.webContents.executeJavaScript(
+      `window.__qishuiRequest(${JSON.stringify(payload)})`,
+      true,
+    );
+    if (!response || response.status < 200 || response.status >= 400) {
+      throw new Error(`汽水登录接口 HTTP ${response?.status || 0}: ${String(response?.body || '').slice(0, 300)}`);
+    }
+    let envelope: any;
+    try {
+      envelope = JSON.parse(response.body || '{}');
+    } catch {
+      throw new Error('汽水登录接口返回了无效 JSON');
+    }
+    // 验证签名
+    const signedUrl = String(this.lastPassportRequest?.url || '');
+    let signedQuery: URLSearchParams;
+    try {
+      signedQuery = new URL(signedUrl).searchParams;
+    } catch {
+      signedQuery = new URLSearchParams();
+    }
+    const aBogus = signedQuery.get('a_bogus') || '';
+    if (aBogus.length !== 44) {
+      throw new Error('汽水安全参数注入失败：a_bogus 缺失');
+    }
+    return envelope;
+  }
+
+  /** 生成二维码 */
+  async getQrCode(): Promise<{ qrcode: string; token: string; scanUrl: string }> {
+    const identity = this.ensureIdentity();
+    const envelope = await this.request('GET', '/passport/web/get_qrcode/', {
+      next: API_BASE,
+      need_logo: 'false',
+      need_short_url: 'false',
+    });
+    const data = envelope.data || {};
+    if (envelope.message !== 'success' || Number(data.error_code) !== 0) {
+      throw new Error(`二维码生成失败：code=${data.error_code} ${data.description || envelope.message || ''}`);
+    }
+    const qrcodeIndexUrl = String(data.qrcode_index_url || '');
+    const token = new URL(qrcodeIndexUrl).searchParams.get('token') || '';
+    const scanUrl = `https://bff-pc.qishui.com/light/invoke/scan_login?token=${token}&client_id=${identity.deviceId}`;
+    return { qrcode: scanUrl, token, scanUrl };
+  }
+
+  /** 轮询扫码状态 */
+  async checkQrConnect(token: string): Promise<{ status: string; error_code: number; session_cookie?: string }> {
+    const identity = this.ensureIdentity();
+    const body: Record<string, any> = {
+      need_logo: 'false',
+      need_short_url: 'false',
+      is_frontier: 'true',
+      token,
+      is_new_login: '1',
+      next: API_BASE,
+    };
+    let envelope = await this.request('POST', '/passport/web/check_qrconnect/', {}, body);
+    let data = envelope.data || {};
+
+    // 二次验证处理
+    if (Number(data.error_code) === 2046) {
+      const decision = { ...envelope, ...data };
+      if (!decision.verify_portrait_id) decision.verify_portrait_id = identity.verifyPortraitId;
+      
+      // 显示二次验证窗口
+      this.window?.setTitle('汽水音乐安全验证');
+      this.window?.setSize(980, 760);
+      this.window?.center();
+      this.window?.show();
+      this.window?.focus();
+      
+      try {
+        const verified = await this.window?.webContents.executeJavaScript(
+          `window.__qishuiSecondVerify(${JSON.stringify(decision)}, ${JSON.stringify({ generalParams: {
+            device_id: identity.deviceId,
+            install_id: identity.installId,
+            did: identity.deviceId,
+            iid: identity.installId,
+            device_platform: 'PC',
+            version_code: APP_VERSION,
+          } })})`,
+          true,
+        );
+        if (!verified || verified.status !== true) {
+          throw new Error(verified?.message || '二次验证未完成');
+        }
+        // 重新发送请求
+        envelope = await this.request('POST', '/passport/web/check_qrconnect/', { isResend: 'true' }, body);
+        data = envelope.data || {};
+        if (Number(data.error_code) === 2046) {
+          throw new Error('二次验证已通过，但服务端仍返回 2046；请重新刷新二维码');
+        }
+      } finally {
+        this.window?.hide();
+      }
+    }
+
+    // 登录成功，收集 cookie
+    // error_code 2156 = token 已消费（用户确认后），也视为成功
+    const isSuccess = (Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed' || data.session_cookie))
+      || Number(data.error_code) === 2156;
+    console.log('[QishuiLogin] checkQrConnect 判断:', JSON.stringify({
+      error_code: data.error_code,
+      status: data.status,
+      hasSessionCookie: !!data.session_cookie,
+      sessionCookieLength: (data.session_cookie || '').length,
+      isSuccess,
+    }));
+    if (isSuccess) {
+      console.log('[QishuiLogin] 登录成功，收集 cookie');
+      // 直接从 session 收集 cookie（不导航，避免 session 重置）
+      await this.persistSessionCookies(data.session_cookie || '');
+    }
+    console.log('[QishuiLogin] checkQrConnect 返回:', JSON.stringify({ error_code: data.error_code, status: data.status, hasSessionCookie: !!data.session_cookie, isSuccess }));
+    return data;
+  }
+
+  /** 持久化会话 cookie */
+  private async persistSessionCookies(sessionCookie: string): Promise<void> {
+    console.log('[QishuiLogin] persistSessionCookies 收到 session_cookie 长度:', sessionCookie.length);
+    const current = parseCookieString(this.cookies.get('qishui')?.cookies || '');
+    // 合并 API 返回的 session_cookie
+    const newCookies = parseCookieString(sessionCookie);
+    console.log('[QishuiLogin] session_cookie 包含字段:', Object.keys(newCookies).join(', '));
+    Object.assign(current, newCookies);
+
+    // 从 authSession 收集所有域的 cookie（session 只应包含相关登录 cookie）
+    if (this.authSession) {
+      const sessionCookies = await this.authSession.cookies.get({});
+      console.log('[QishuiLogin] authSession cookies 总数:', sessionCookies.length);
+      for (const cookie of sessionCookies) {
+        const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
+        // 收集所有非 csrf 的 cookie，重点是 session/token 类
+        if (!/csrf|anonymous/i.test(cookie.name)) {
+          current[cookie.name] = cookie.value;
+          console.log('[QishuiLogin] 收集 authSession cookie:', cookie.name, '@', domain);
+        } else {
+          console.log('[QishuiLogin] 跳过 csrf cookie:', cookie.name);
+        }
+      }
+    }
+
+    const cookieStr = buildCookieString(current);
+    console.log('[QishuiLogin] 最终 cookie 长度:', cookieStr.length, '字段:', Object.keys(current).join(', '));
+    this.cookies.set('qishui', cookieStr, this.msToken, '汽水音乐');
+  }
+
+  /** 获取账号信息 */
+  async getAccount(): Promise<AccountInfo | null> {
+    const rec = this.cookies.get('qishui');
+    if (!rec?.cookies) {
+      console.log('[QishuiLogin] getAccount: 无 cookie 记录');
+      return null;
+    }
+    const cookie = rec.cookies;
+    console.log('[QishuiLogin] getAccount: cookie 长度:', cookie.length, '前200字符:', cookie.substring(0, 200));
+
+    // 提取用户信息
+    const userId = this.extractCookieValue(cookie, 'uid_v2') || this.extractCookieValue(cookie, 'uid') || '';
+    console.log('[QishuiLogin] getAccount: uid_v2=', this.extractCookieValue(cookie, 'uid_v2'), 'uid=', this.extractCookieValue(cookie, 'uid'));
+    if (!userId) {
+      console.log('[QishuiLogin] getAccount: 未找到 uid_v2 或 uid，返回 null');
+      return null;
+    }
+
+    // 尝试从 API 获取昵称
+    let nickname = '';
+    let avatar = '';
+    try {
+      const me = await this.fetchMeInfo(cookie);
+      console.log('[QishuiLogin] getAccount: fetchMeInfo 返回:', JSON.stringify(me));
+      if (me) {
+        nickname = me.nickname || '';
+        avatar = me.avatar || '';
+      }
+    } catch (err) {
+      console.log('[QishuiLogin] getAccount: fetchMeInfo 异常:', err);
+    }
+
+    return {
+      loggedIn: true,
+      userId,
+      nickname: nickname || '汽水用户',
+      avatarUrl: avatar,
+      vipType: 0,
+      isVip: false,
+      isSvip: false,
+    };
+  }
+
+  /** 调用 /luna/pc/me 获取账号信息 */
+  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string } | null> {
+    try {
+      const params = this.pcAppParams();
+      const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+      const url = `https://api.qishui.com/luna/pc/me?${qs}`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json,text/plain,*/*',
+          'User-Agent': 'LunaPC/3.3.0(359450208)',
+          'x-luna-background-type': 'foreground',
+          'x-luna-is-background-req': '0',
+          'x-luna-is-local-user': '1',
+          Cookie: cookie,
+        },
+      });
+      const json = await res.json() as any;
+      const data = json?.data || json || {};
+      return {
+        nickname: data.nickname || data.nick_name || '',
+        avatar: data.avatar || data.avatar_url || '',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** PC 公共参数 */
+  private pcAppParams(extra: Record<string, any> = {}): Record<string, any> {
+    const now = Date.now();
+    return {
+      aid: AID,
+      app_name: 'luna_pc',
+      region: 'cn',
+      geo_region: 'cn',
+      os_region: 'cn',
+      device_id: String(now),
+      cdid: '',
+      iid: String(now + 1),
+      version_name: APP_VERSION,
+      version_code: '30030000',
+      channel: 'official',
+      build_mode: 'master',
+      network_carrier: '',
+      ac: 'wifi',
+      tz_name: 'Asia/Shanghai',
+      resolution: '',
+      device_platform: 'windows',
+      device_type: 'Windows',
+      os_version: 'Windows 11',
+      fp: String(now),
+      ...extra,
+    };
+  }
+
+  /** 清理会话 */
+  async clear(): Promise<void> {
+    if (this.authSession) {
+      await this.authSession.clearStorageData({
+        storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage', 'serviceworkers'],
+      });
+    }
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.destroy();
+    }
+    this.window = null;
+    this.browserInfo = null;
+    this.msToken = '';
+    this.initialized = false;
+    this.identity = null; // 重置设备身份，下次登录生成新的
+    if (this.assetServer) {
+      this.assetServer.close();
+      this.assetServer = null;
+      this.assetBase = '';
+    }
+  }
+
+  private ensureIdentity(): { deviceId: string; installId: string; computerName: string; verifyPortraitId: string } {
+    if (!this.identity) {
+      this.identity = {
+        deviceId: crypto.randomBytes(8).toString('hex'),
+        installId: crypto.randomBytes(8).toString('hex'),
+        computerName: 'nebula',
+        verifyPortraitId: crypto.randomBytes(16).toString('hex'),
+      };
+    }
+    return this.identity;
+  }
+
+  private commonParams(identity: any): Record<string, any> {
+    return {
+      passport_jssdk_version: SDK_VERSION,
+      passport_jssdk_type: 'normal',
+      is_from_ttaccountsdk: '1',
+      aid: AID,
+      language: 'zh',
+      account_sdk_source: 'web',
+      p_js_v: SDK_VERSION,
+      p_js_t: 'pro',
+      p_zt: SECURE_SDK_VERSION,
+      p_ver: VERIFY_SDK_VERSION,
+      request_host: 'app%3A%2F%2Fresources',
+      p_bd: BDMS_VERSION,
+      biz_trace_id: crypto.randomBytes(4).toString('hex'),
+      is_new_login: '1',
+      is_from_iesaccountsaas: '1',
+      device_id: identity.deviceId,
+      install_id: identity.installId,
+      did: identity.deviceId,
+      iid: identity.installId,
+      device_platform: 'PC',
+      version_code: APP_VERSION,
+      account_sdk_source_info: String(this.browserInfo?.encrypted || ''),
+      msToken: this.msToken,
+    };
+  }
+
+  private requestHeaders(identity: any, bizTraceId: string): Record<string, string> {
+    const traceId = crypto.randomBytes(16).toString('hex');
+    return {
+      Accept: 'application/json, text/javascript',
+      'User-Agent': UA,
+      'x-tt-passport-verify-portrait': identity.verifyPortraitId,
+      'x-tt-passport-trace-id': bizTraceId,
+      'x-tt-trace-id': `00-${traceId}-${traceId.slice(0, 16)}-01`,
+    };
+  }
+
+  private extractCookieValue(cookie: string, name: string): string {
+    for (const seg of cookie.split(';')) {
+      const eq = seg.indexOf('=');
+      if (eq <= 0) continue;
+      const k = seg.slice(0, eq).trim();
+      const v = seg.slice(eq + 1).trim();
+      if (k === name) return v;
+    }
+    return '';
+  }
+}

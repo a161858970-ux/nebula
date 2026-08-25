@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>
+    // msToken 管理
+    window.__qishuiMsToken = '';
+    window.__qishuiSecurityTrace = [];
+    const trace = (kind, detail = {}) => {
+      window.__qishuiSecurityTrace.push({ at: Date.now(), kind, ...detail });
+      if (window.__qishuiSecurityTrace.length > 500) window.__qishuiSecurityTrace.shift();
+    };
+  </script>
+  <script src="sdk-glue.js"></script>
+  <script>
+    // 初始化 BDMS SDK
+    window._SdkGlueInit({
+      self: { aid: 386088, pageId: 24554 },
+      bdms: { aid: 386088, paths: ['/passport'] },
+    });
+
+    // 浏览器指纹信息
+    window.__qishuiBrowserInfo = function () {
+      const info = {
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        webdriver: Boolean(navigator.webdriver || /headless/i.test(navigator.userAgent)),
+        plugins: navigator.plugins ? navigator.plugins.length : 0,
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        outerHeight: window.outerHeight,
+        outerWidth: window.outerWidth,
+        request_host: 'resources',
+        request_pathname: '/main.asar/main.html',
+        browser: {
+          t: String(Date.now()).split('').reverse().join(''),
+          bit_protocol: 'false',
+          bit_helper: false,
+        },
+      };
+      // XOR 加密（与 Mineradio 一致）
+      const bytes = new TextEncoder().encode(JSON.stringify(info));
+      let encrypted = '';
+      for (const byte of bytes) encrypted += (byte ^ 5).toString(16);
+      return { raw: info, encrypted };
+    };
+
+    // 签名请求代理（通过 BrowserWindow 的 XHR 发送，BDMS 自动注入 a_bogus）
+    window.__qishuiRequest = function (request) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(request.method || 'GET', request.url, true);
+        for (const [name, value] of Object.entries(request.headers || {})) {
+          xhr.setRequestHeader(name, String(value));
+        }
+        xhr.timeout = request.timeout || 20000;
+        xhr.onload = () => resolve({
+          status: xhr.status,
+          body: xhr.responseText,
+          responseURL: xhr.responseURL,
+          headers: xhr.getAllResponseHeaders(),
+        });
+        xhr.onerror = () => reject(new Error('XMLHttpRequest network error'));
+        xhr.ontimeout = () => reject(new Error('XMLHttpRequest timeout'));
+        xhr.send(request.body == null ? null : request.body);
+      });
+    };
+
+    // 二次验证支持
+    window.__qishuiCancelSecondVerify = function () {
+      if (window.__qishuiMfaResolve) {
+        window.__qishuiMfaResolve({ status: false, message: '用户取消二次验证' });
+      }
+    };
+
+    window.__qishuiSecondVerify = async function (originDecision, options = {}) {
+      try {
+        const decision = originDecision || {};
+        if (!decision.url) throw new Error('2046 决策中缺少二次验证组件 URL');
+        
+        const resource = new URL(String(decision.url), 'https://api.qishui.com/');
+        resource.searchParams.set('aid', '386088');
+        resource.searchParams.set('verify_reason', '');
+        resource.searchParams.set('verify_scene', '');
+        window.$$account_verify_portrait_id = decision.verify_portrait_id || '';
+
+        if (typeof window.ucWebSecondVerify !== 'function') {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.crossOrigin = 'anonymous';
+            script.src = resource.toString();
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('二次验证组件加载失败'));
+            document.head.appendChild(script);
+          });
+        }
+        if (typeof window.ucWebSecondVerify !== 'function') {
+          throw new Error('官方二次验证组件未导出 ucWebSecondVerify');
+        }
+
+        return await new Promise(resolve => {
+          let finished = false;
+          const finish = result => {
+            if (finished) return;
+            finished = true;
+            window.__qishuiMfaResolve = null;
+            resolve(result && typeof result === 'object'
+              ? JSON.parse(JSON.stringify(result))
+              : { status: false, message: String(result || '验证未完成') });
+          };
+          window.__qishuiMfaResolve = finish;
+          window.ucWebSecondVerify({
+            verifyFinishCallback: finish,
+            aid: 386088,
+            isNewVerifyUI: true,
+            generalParams: options.generalParams || {},
+            newSecondVerifyWebOptions: {
+              host: 'https://api.qishui.com',
+              verifyAppName: '汽水音乐移动端',
+            },
+            ...decision,
+          });
+        });
+      } catch (error) {
+        throw error;
+      }
+    };
+  </script>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; background: #fff; font-family: sans-serif; }
+  </style>
+</head>
+<body></body>
+</html>
