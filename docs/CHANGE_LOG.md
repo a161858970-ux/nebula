@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-08-25 — 汽水登录第二轮回修：对齐 Mineradio 官方扫码流程
+
+**目标**
+
+实测日志显示手机确认后 PC 一直停在 `scanned`，随后 `error_code 2156`（真实语义为"系统繁忙，请重启应用或刷新页面后重试"，并非此前注释理解的"token 已消费"）。对照 Mineradio `qishui-auth-v6.js` 发现四类确定性差异，全部对齐修复。
+
+**改动（src/main/login/qishuiLogin.ts）**
+
+- 扫码 URL：`client_id=<deviceId>` → `os=Windows&computer_name=<主机名>`（手机确认回绑 PC 会话的关键参数）。
+- 版本对齐：`APP_VERSION 3.3.0 → 3.5.2`；UA `SodaMusic/3.1.0 → 3.2.1`（服务端对版本敏感，裸探测曾返回 4031"版本过低"）。
+- CORS 放行：`onHeadersReceived` 注入 `Access-Control-Allow-Origin/Credentials/Expose-Headers`（跨域 XHR 的 Set-Cookie 才能写入 session，解决 `capturedFields` 一直为空的问题）；与 Set-Cookie 捕获合并为单一 handler。
+- 设备身份格式对齐 Mineradio：`deviceId` 16 位数字、`installId` 15 位数字、`verifyPortraitId = UUID + '.login'`、`computerName = os.hostname()`。
+- 诊断：签名后 msToken 与本地不一致时打警告（SDK 篡改场景尽早暴露）。
+
+**验证**
+
+- pnpm exec tsc --noEmit / qa:backend（26/26）通过；待用户实测扫码确认。
+
+**遗留与风险**
+
+- 若仍 2156，下一步排查：check_qrconnect 请求是否带上 csrf（CORS 修复后应能写入）、msToken 有效性、以及 2046 二次验证的 biz_params 合并（Mineradio 有，我们暂未做）。
+
 ## 2026-08-25 — 汽水音乐登录链路修复 + 酷狗修复系列补录
 
 **目标**

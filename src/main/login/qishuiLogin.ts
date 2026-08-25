@@ -1,19 +1,23 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { CookieStore } from '../cookieStore';
 import type { AccountInfo } from '../types';
 
 const API_BASE = 'https://api.qishui.com';
 const AID = '386088';
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.5.2';
 const SDK_VERSION = '2.4.13';
 const VERIFY_SDK_VERSION = '1.0.29';
 const SECURE_SDK_VERSION = '3.3.5';
 const BDMS_VERSION = '1.0.0.41';
 const AUTH_PARTITION = 'persist:nebula-qishui-auth';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SodaMusic/3.1.0 Chrome/136.0.7103.59 Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) SodaMusic/3.2.1 Chrome/136.0.7103.59 ' +
+  'Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
 
 /** 解码 cookie 字符串 */
 function parseCookieString(raw: string): Record<string, string> {
@@ -95,29 +99,35 @@ export class QishuiLogin {
       callback({ cancel: false });
     });
 
-    // 方案A：拦截 Set-Cookie 响应头，手动捕获登录凭证（不依赖 Chromium session 自动存 cookie）
-    ses.webRequest.onHeadersReceived({ urls: ['https://*.qishui.com/*', 'https://*.douyin.com/*', 'https://*.volcengine.com/*'] }, (details: any, callback: any) => {
-      const headers = details.responseHeaders || {};
-      let setCookies: string[] = [];
-      for (const key of Object.keys(headers)) {
-        if (key.toLowerCase() === 'set-cookie') {
-          const val = headers[key];
-          if (Array.isArray(val)) setCookies.push(...val);
-          else setCookies.push(String(val));
+    // 跨域 XHR 的 CORS 放行 + 捕获 Set-Cookie（无 CORS 头时 XHR 的 Set-Cookie 不会写入 session）
+    ses.webRequest.onHeadersReceived(
+      { urls: ['https://api.qishui.com/*', 'https://*.qishui.com/*', 'https://*.douyin.com/*', 'https://*.volcengine.com/*'] },
+      (details: any, callback: any) => {
+        const headers: Record<string, string[]> = { ...(details.responseHeaders || {}) };
+        headers['Access-Control-Allow-Origin'] = ['*'];
+        headers['Access-Control-Allow-Credentials'] = ['true'];
+        headers['Access-Control-Expose-Headers'] = ['*'];
+        const setCookies: string[] = [];
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === 'set-cookie') {
+            const val = headers[key];
+            if (Array.isArray(val)) setCookies.push(...val);
+            else setCookies.push(String(val));
+          }
         }
-      }
-      for (const sc of setCookies) {
-        const eq = sc.indexOf('=');
-        if (eq <= 0) continue;
-        const name = sc.slice(0, eq).trim();
-        const value = sc.slice(eq + 1).split(';')[0].trim();
-        if (name && value) {
-          this.capturedCookies[name] = value;
-          console.log('[QishuiLogin] 捕获 Set-Cookie:', name, '=', value.substring(0, 20) + '...');
+        for (const sc of setCookies) {
+          const eq = sc.indexOf('=');
+          if (eq <= 0) continue;
+          const name = sc.slice(0, eq).trim();
+          const value = sc.slice(eq + 1).split(';')[0]!.trim();
+          if (name && value) {
+            this.capturedCookies[name] = value;
+            console.log('[QishuiLogin] 捕获 Set-Cookie:', name, '=', value.substring(0, 20) + '...');
+          }
         }
-      }
-      callback({ cancel: false });
-    });
+        callback({ responseHeaders: headers });
+      },
+    );
 
     // 创建隐藏窗口
     this.window = new BrowserWindow({
@@ -237,6 +247,11 @@ export class QishuiLogin {
     if (aBogus.length !== 44) {
       throw new Error('汽水安全参数注入失败：a_bogus 缺失');
     }
+    const signedMsToken = signedQuery.get('msToken') || '';
+    if (signedMsToken && signedMsToken !== this.msToken) {
+      // SDK 篡改/替换了 msToken 时尽早暴露（与 Mineradio 行为一致）
+      console.warn('[QishuiLogin] 签名后 msToken 与本地不一致（SDK 替换），使用签名 URL 的 msToken');
+    }
     // 补充捕获：XHR 响应头的 Set-Cookie 直接并入（onHeadersReceived 可能因 URL 模式漏匹配）
     const setCookies = this.parseSetCookieHeader(String(response.headers || ''));
     if (setCookies.length) {
@@ -278,7 +293,12 @@ export class QishuiLogin {
     }
     const qrcodeIndexUrl = String(data.qrcode_index_url || '');
     const token = new URL(qrcodeIndexUrl).searchParams.get('token') || '';
-    const scanUrl = `https://bff-pc.qishui.com/light/invoke/scan_login?token=${token}&client_id=${identity.deviceId}`;
+    // 官方扫码 URL：必须带 os + computer_name，手机确认才能回绑到本 PC 会话
+    const scanTarget = new URL('https://bff-pc.qishui.com/light/invoke/scan_login');
+    scanTarget.searchParams.set('token', token);
+    scanTarget.searchParams.set('os', 'Windows');
+    scanTarget.searchParams.set('computer_name', identity.computerName || 'Windows-PC');
+    const scanUrl = scanTarget.toString().replace(/\+/g, '%20');
     return { qrcode: scanUrl, token, scanUrl };
   }
 
@@ -584,10 +604,10 @@ export class QishuiLogin {
   private ensureIdentity(): { deviceId: string; installId: string; computerName: string; verifyPortraitId: string } {
     if (!this.identity) {
       this.identity = {
-        deviceId: crypto.randomBytes(8).toString('hex'),
-        installId: crypto.randomBytes(8).toString('hex'),
-        computerName: 'nebula',
-        verifyPortraitId: crypto.randomBytes(16).toString('hex'),
+        deviceId: String(crypto.randomInt(1, 9)) + String(crypto.randomInt(0, 10 ** 15)).padStart(15, '0'),
+        installId: String(crypto.randomInt(1, 9)) + String(crypto.randomInt(0, 10 ** 14)).padStart(14, '0'),
+        computerName: os.hostname() || 'Windows-PC',
+        verifyPortraitId: crypto.randomUUID() + '.login',
       };
     }
     return this.identity;
