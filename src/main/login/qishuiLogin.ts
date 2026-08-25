@@ -603,9 +603,15 @@ export class QishuiLogin {
 
   private ensureIdentity(): { deviceId: string; installId: string; computerName: string; verifyPortraitId: string } {
     if (!this.identity) {
+      // 逐位生成数字串，避免 crypto.randomInt 的 max-min 超过 2^48-1 上限
+      const randomDigits = (length: number): string => {
+        let value = String(crypto.randomInt(1, 10));
+        while (value.length < length) value += String(crypto.randomInt(0, 10));
+        return value;
+      };
       this.identity = {
-        deviceId: String(crypto.randomInt(1, 9)) + String(crypto.randomInt(0, 10 ** 15)).padStart(15, '0'),
-        installId: String(crypto.randomInt(1, 9)) + String(crypto.randomInt(0, 10 ** 14)).padStart(14, '0'),
+        deviceId: randomDigits(16),
+        installId: randomDigits(15),
         computerName: os.hostname() || 'Windows-PC',
         verifyPortraitId: crypto.randomUUID() + '.login',
       };
