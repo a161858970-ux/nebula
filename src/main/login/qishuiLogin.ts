@@ -38,6 +38,7 @@ export class QishuiLogin {
   private browserInfo: any = null;
   private initialized = false;
   private lastPassportRequest: { url: string } | null = null;
+  private capturedCookies: Record<string, string> = {};
   private assetServer: http.Server | null = null;
   private assetBase = '';
   /** 设备身份：整个登录会话内保持一致，避免服务端认为是不同设备 */
@@ -91,6 +92,30 @@ export class QishuiLogin {
     // 安装请求拦截（捕获 BDMS 签名后的 URL）
     ses.webRequest.onBeforeRequest({ urls: ['https://api.qishui.com/passport/*'] }, (details: any, callback: any) => {
       this.lastPassportRequest = { url: details.url };
+      callback({ cancel: false });
+    });
+
+    // 方案A：拦截 Set-Cookie 响应头，手动捕获登录凭证（不依赖 Chromium session 自动存 cookie）
+    ses.webRequest.onHeadersReceived({ urls: ['https://*.qishui.com/*', 'https://*.douyin.com/*', 'https://*.volcengine.com/*'] }, (details: any, callback: any) => {
+      const headers = details.responseHeaders || {};
+      let setCookies: string[] = [];
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === 'set-cookie') {
+          const val = headers[key];
+          if (Array.isArray(val)) setCookies.push(...val);
+          else setCookies.push(String(val));
+        }
+      }
+      for (const sc of setCookies) {
+        const eq = sc.indexOf('=');
+        if (eq <= 0) continue;
+        const name = sc.slice(0, eq).trim();
+        const value = sc.slice(eq + 1).split(';')[0].trim();
+        if (name && value) {
+          this.capturedCookies[name] = value;
+          console.log('[QishuiLogin] 捕获 Set-Cookie:', name, '=', value.substring(0, 20) + '...');
+        }
+      }
       callback({ cancel: false });
     });
 
@@ -314,7 +339,18 @@ export class QishuiLogin {
     console.log('[QishuiLogin] session_cookie 包含字段:', Object.keys(newCookies).join(', '));
     Object.assign(current, newCookies);
 
-    // 从 authSession 收集所有域的 cookie（session 只应包含相关登录 cookie）
+    // 方案A核心：合并通过 onHeadersReceived 手动拦截到的 Set-Cookie 凭证（最关键）
+    const capturedEntries = Object.entries(this.capturedCookies);
+    if (capturedEntries.length) {
+      console.log('[QishuiLogin] 合并 capturedCookies:', capturedEntries.length, '个字段:', capturedEntries.map(([k]) => k).join(', '));
+      for (const [k, v] of capturedEntries) {
+        if (v) current[k] = v;
+      }
+    } else {
+      console.log('[QishuiLogin] capturedCookies 为空，未拦截到 Set-Cookie');
+    }
+
+    // 从 authSession 补充收集（capturedCookies 优先，session 起补充作用）
     if (this.authSession) {
       const sessionCookies = await this.authSession.cookies.get({});
       console.log('[QishuiLogin] authSession cookies 总数:', sessionCookies.length);
@@ -322,8 +358,10 @@ export class QishuiLogin {
         const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
         // 收集所有非 csrf 的 cookie，重点是 session/token 类
         if (!/csrf|anonymous/i.test(cookie.name)) {
-          current[cookie.name] = cookie.value;
-          console.log('[QishuiLogin] 收集 authSession cookie:', cookie.name, '@', domain);
+          if (!current[cookie.name]) {
+            current[cookie.name] = cookie.value;
+            console.log('[QishuiLogin] 收集 authSession cookie:', cookie.name, '@', domain);
+          }
         } else {
           console.log('[QishuiLogin] 跳过 csrf cookie:', cookie.name);
         }
