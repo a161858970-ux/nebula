@@ -14,6 +14,8 @@ const VERIFY_SDK_VERSION = '1.0.29';
 const SECURE_SDK_VERSION = '3.3.5';
 const BDMS_VERSION = '1.0.0.41';
 const AUTH_PARTITION = 'persist:nebula-qishui-auth';
+const OFFICIAL_BDMS_URL =
+  'https://lf-headquarters-speed.yhgfb-cn-static.com/obj/rc-client-security/web/stable/1.0.0.41/bdms.js';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) SodaMusic/3.2.1 Chrome/136.0.7103.59 ' +
@@ -68,7 +70,11 @@ export class QishuiLogin {
       const contentType = mimeTypes[ext] || 'application/octet-stream';
       try {
         const content = fs.readFileSync(filePath);
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
         res.end(content);
       } catch {
         res.writeHead(404);
@@ -92,6 +98,11 @@ export class QishuiLogin {
     const { BrowserWindow, session } = this.electronModules;
     const ses = session.fromPartition(AUTH_PARTITION);
     this.authSession = ses;
+
+    // sdk-glue 运行时会动态加载官方 bdms.js，重定向到本地资源（离线可用 + 不被风控篡改）
+    ses.webRequest.onBeforeRequest({ urls: [OFFICIAL_BDMS_URL] }, (_details: any, callback: any) => {
+      callback({ redirectURL: this.assetBase + 'bdms.js' });
+    });
 
     // 安装请求拦截（捕获 BDMS 签名后的 URL）
     ses.webRequest.onBeforeRequest({ urls: ['https://api.qishui.com/passport/*'] }, (details: any, callback: any) => {
@@ -186,10 +197,11 @@ export class QishuiLogin {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const status = await this.window!.webContents.executeJavaScript(`({
-        loaded: Boolean(window.bdms),
         glue: window._sdkGlueVersionMap && window._sdkGlueVersionMap.sdkGlueVersion,
+        bdms: window._sdkGlueVersionMap && window._sdkGlueVersionMap.bdmsVersion,
+        loaded: Boolean(window.bdms),
       })`);
-      if (status && status.loaded) return;
+      if (status && status.loaded && status.bdms) return;
       await new Promise(r => setTimeout(r, 100));
     }
     throw new Error('汽水安全组件初始化超时：bdms 未就绪');

@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-08-25 — 汽水登录第三轮回修：2046 二次验证组件修复
+
+**目标**
+
+实测已能走到扫码确认，但手机确认后触发 2046 二次验证时窗口一闪即关，日志报 `官方二次验证组件未导出 ucWebSecondVerify`。
+
+**改动**
+
+- `qishui-sign-engine/` 补齐 Mineradio 同源资源：`react.js`、`react-dom.js`、`bdms.js`；`security_host.html` 整体替换为 Mineradio 完整版（挂载 `ucSecondVerifyReact/Dom`、`expandVerifyCenterDecision`（verify_center 先调 `pack_verify_ways_data` 展开决策）、`event_params`/`verify_reason`/`verify_scene`、`reportAppLog`、增强浏览器指纹、mfa-status 提示）。
+- `qishuiLogin.ts`：官方 BDMS URL（`lf-headquarters-speed.../bdms.js`）重定向到本地资源；`waitForBdms` 对齐 Mineradio（校验 `bdmsVersion` 存在）；本地资源服务加 `Cache-Control: no-store`。
+
+**验证**
+
+- pnpm exec tsc --noEmit / build:main 通过；待用户实测完成二次验证。
+
+**遗留与风险**
+
+- 二次验证窗口为隐藏签名窗口 show() 而来（与二维码窗口分离）；若仍失败，检查 `decision.url` 是否有效（已含 expandVerifyCenterDecision 兜底）。
+
 ## 2026-08-25 — 汽水登录第二轮回修：对齐 Mineradio 官方扫码流程
 
 **目标**
