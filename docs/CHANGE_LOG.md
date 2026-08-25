@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-08-25 — 汽水取链排查结论（IP 风控）+ 自定义封面兜底
+
+**目标**
+
+1. track_v2 持续空响应（HTTP 200 空 body）——系统性排查客户端侧全部因素。
+2. 用户自定义封面 / 「抖音收藏的音乐」歌单封面空白。
+
+**排查结论（track_v2）**
+
+- 已排除：Node 直连、真实浏览器（Electron 渲染进程 + session 种 cookie）、BDMS `a_bogus` 签名（paths 扩展 `/luna/pc` 后签名 URL 正常但响应仍空）、acrawler 全套风控 cookie（`__ac_nonce/__ac_signature/ttwid/s_v_web_id`，douyin.com 导航生成后种入 qishui 会话）、msToken query、多 API base（api5-lq）、POST/GET、版本/UA 变体。
+- 结论：**服务端对取链接口按网络出口 IP 风控**（me/playlist/detail 等非敏感接口放行）。Mineradio 依赖同一接口，同环境下同样失败。
+- 建议用户换网络出口（手机热点等）复测确认；现状由 SongResolver 跨平台兜底（QQ/网易云）维持播放。
+
+**封面兜底**
+
+- 用户上传图（`tos-cn-i-` 前缀 uri）无法无签名拼接（403/400），默认封面（`tos-cn-v-`）正常。
+- `qishuiCoverUrl` 对 `tos-cn-i-` 视为不可用；歌单列表对封面无效的歌单异步拉详情取第一首歌封面（≤8 个）；歌单详情页同样 fallback。
+
+**验证**
+
+- curl 实测：默认封面拼接 200 image/jpeg；自定义封面各域名/模板组合 403/400。tsc / qa:backend 全绿。
+
+**遗留**
+
+- 若换网络后 track_v2 可通，需把取链/歌词的 track_v2 路径继续完善（player_info_url 二次请求 + `#auth=` 解密为待办）。
+
 ## 2026-08-25 — 汽水登录成功 + 昵称/歌单数据映射修复
 
 **目标**

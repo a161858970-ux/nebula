@@ -72,7 +72,14 @@ function qishuiCoverUrl(cover: any, suffix = ''): string {
   if (out && uri && !out.includes(uri)) out += uri;
   if (!out && /^https?:\/\//i.test(uri)) out = uri;
   if (!/^https?:\/\//i.test(out)) return '';
+  // 用户上传图（tos-cn-i- 前缀）无法无签名拼接，视为不可用（fallback 到歌曲封面）
+  if (/tos-cn-i-/.test(uri)) return '';
   return suffix && !out.includes('~') ? out + suffix : out;
+}
+
+/** 封面是否可用（占位/不可拼接的返回 false）。 */
+function coverUsable(coverUrl: string): boolean {
+  return !!coverUrl && /^https?:\/\//i.test(coverUrl) && !/\/img\/$/.test(coverUrl);
 }
 
 export class QishuiAdapter implements PlatformAdapter {
@@ -174,11 +181,13 @@ export class QishuiAdapter implements PlatformAdapter {
       cursor = String(page?.next_cursor || '');
       if (!page?.has_more) break;
     }
+    let cover = qishuiCoverUrl(playlist.url_cover || playlist.cover, '~c5_300x300.jpg');
+    if (!coverUsable(cover) && allTracks[0]?.cover) cover = allTracks[0]!.cover;
     return {
       id: playlistId,
       platform: 'qishui',
       name: playlist.title || playlist.name || '汽水歌单',
-      cover: qishuiCoverUrl(playlist.url_cover || playlist.cover, '~c5_300x300.jpg'),
+      cover,
       tracks: allTracks,
     };
   }
@@ -247,6 +256,26 @@ export class QishuiAdapter implements PlatformAdapter {
           trackCount: Number(pl.count_tracks || pl.track_count || pl.song_count || 0),
         });
       }
+      // 封面不可用的歌单（用户自定义图）→ 异步拉详情取第一首歌封面
+      await Promise.all(
+        playlists
+          .filter((p) => !coverUsable(p.cover))
+          .slice(0, 8)
+          .map(async (p) => {
+            try {
+              const detail = await this.pcRequest<any>('/luna/pc/playlist/detail', {
+                playlist_id: p.id,
+                cursor: '0',
+                count: '1',
+              }, cookie);
+              const res = detail?.media_resources?.[0]?.entity?.track_wrapper?.track;
+              const first = res ? this.mapTrack(res) : null;
+              if (first?.cover) p.cover = first.cover;
+            } catch {
+              /* 封面兜底失败不阻塞 */
+            }
+          }),
+      );
     } catch (err) {
       console.warn('[QishuiAdapter] 我的歌单获取失败:', err instanceof Error ? err.message : err);
     }
