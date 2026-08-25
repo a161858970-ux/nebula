@@ -52,6 +52,29 @@ const QISHUI_QUALITY_TIERS: Array<{ level: string; label: string }> = [
   { level: 'standard', label: '标准 128k' },
 ];
 
+/** 汽水封面 URL 补全：urls[0] 常为占位 base（如 .../img/），需拼接 uri + 尺寸后缀。 */
+function qishuiCoverUrl(cover: any, suffix = ''): string {
+  if (!cover) return '';
+  if (typeof cover === 'string') {
+    return /^https?:\/\//i.test(cover) ? (suffix && !cover.includes('~') ? cover + suffix : cover) : '';
+  }
+  if (Array.isArray(cover)) {
+    for (const item of cover) {
+      const url = qishuiCoverUrl(item, suffix);
+      if (url) return url;
+    }
+    return '';
+  }
+  if (typeof cover !== 'object') return '';
+  const urls = cover.urls || cover.url_list || cover.urlList || [];
+  const uri = String(cover.uri || cover.url_key || cover.image_uri || cover.cover_uri || '');
+  let out = Array.isArray(urls) ? String(urls[0] || '') : '';
+  if (out && uri && !out.includes(uri)) out += uri;
+  if (!out && /^https?:\/\//i.test(uri)) out = uri;
+  if (!/^https?:\/\//i.test(out)) return '';
+  return suffix && !out.includes('~') ? out + suffix : out;
+}
+
 export class QishuiAdapter implements PlatformAdapter {
   readonly platform = 'qishui' as const;
 
@@ -130,16 +153,33 @@ export class QishuiAdapter implements PlatformAdapter {
     // 实测结构：顶层 playlist + media_resources[].entity.track_wrapper.track
     const playlist = json?.playlist || json?.data?.playlist || {};
     const resources: any[] = json?.media_resources || json?.data?.media_resources || [];
-    const tracks = resources
-      .map((r: any) => r?.entity?.track_wrapper?.track || r?.track || r)
-      .map((t: any) => this.mapTrack(t))
-      .filter(Boolean) as Track[];
+    const allTracks: Track[] = [];
+    for (const r of resources) {
+      const t = this.mapTrack(r?.entity?.track_wrapper?.track || r?.track || r);
+      if (t) allTracks.push(t);
+    }
+    // 分页拉全（has_more + next_cursor），与其它平台一致
+    let cursor = String(json?.next_cursor || '');
+    while (json?.has_more && cursor && allTracks.length < 2000) {
+      const page = await this.pcRequest<any>('/luna/pc/playlist/detail', {
+        playlist_id: playlistId,
+        cursor,
+        count: '100',
+      }, cookie);
+      const pageResources: any[] = page?.media_resources || [];
+      for (const r of pageResources) {
+        const t = this.mapTrack(r?.entity?.track_wrapper?.track || r?.track || r);
+        if (t) allTracks.push(t);
+      }
+      cursor = String(page?.next_cursor || '');
+      if (!page?.has_more) break;
+    }
     return {
       id: playlistId,
       platform: 'qishui',
       name: playlist.title || playlist.name || '汽水歌单',
-      cover: playlist.url_cover?.urls?.[0] || playlist.cover?.url_list?.[0] || playlist.cover || '',
-      tracks,
+      cover: qishuiCoverUrl(playlist.url_cover || playlist.cover, '~c5_300x300.jpg'),
+      tracks: allTracks,
     };
   }
 
@@ -203,7 +243,7 @@ export class QishuiAdapter implements PlatformAdapter {
         playlists.push({
           id: String(pl.id || pl.playlist_id || ''),
           name: pl.title || pl.name || '我的歌单',
-          cover: pl.url_cover?.urls?.[0] || pl.cover?.url_list?.[0] || pl.cover || '',
+          cover: qishuiCoverUrl(pl.url_cover || pl.cover, '~c5_300x300.jpg'),
           trackCount: Number(pl.count_tracks || pl.track_count || pl.song_count || 0),
         });
       }
@@ -223,7 +263,7 @@ export class QishuiAdapter implements PlatformAdapter {
           playlists.push({
             id: String(pl.id || pl.playlist_id || ''),
             name: pl.title || pl.name || '收藏歌单',
-            cover: pl.url_cover?.urls?.[0] || pl.cover?.url_list?.[0] || pl.cover || '',
+            cover: qishuiCoverUrl(pl.url_cover || pl.cover, '~c5_300x300.jpg'),
             trackCount: Number(pl.count_tracks || pl.track_count || pl.song_count || 0),
           });
         }
@@ -332,11 +372,7 @@ export class QishuiAdapter implements PlatformAdapter {
         .filter(Boolean);
       const artist = artists.join(' / ') || item.artist || '';
       const album = item.album?.name || item.album_name || '';
-      const cover =
-        item.album?.url_cover?.urls?.[0] ||
-        item.cover?.url_list?.[0] ||
-        item.album?.cover?.url_list?.[0] ||
-        '';
+      const cover = qishuiCoverUrl(item.album?.url_cover || item.album?.cover || item.cover, '~c5_300x300.jpg');
       const duration = Number(item.duration || item.duration_ms || 0);
       return {
         id: `qishui:${id}`,

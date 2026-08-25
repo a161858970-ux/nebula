@@ -170,6 +170,8 @@ export class QishuiLogin {
           'https://*.volcengine.com/*',
           'https://verify.zijieapi.com/*',
           'https://auth.zijieapi.com/*',
+          'https://mssdk.bytedance.com/*',
+          'https://*.bytedance.com/*',
         ],
       },
       (details: any, callback: any) => {
@@ -669,10 +671,16 @@ export class QishuiLogin {
       const json = await res.json() as any;
       // 实测结构：{ status_info, my_info: { id, nickname, larger_avatar_url: { urls: [...] } } }
       const data = json?.my_info || json?.data?.my_info || json || {};
+      const avatarObj = data.larger_avatar_url || data.avatar_url || data.avatar || {};
+      const avatarUrls = avatarObj.urls || avatarObj.url_list || [];
+      let avatar = Array.isArray(avatarUrls) ? String(avatarUrls[0] || '') : '';
+      const avatarUri = String(avatarObj.uri || '');
+      if (avatar && avatarUri && !avatar.includes(avatarUri)) avatar += avatarUri;
+      if (!avatar && /^https?:\/\//i.test(avatarUri)) avatar = avatarUri;
       return {
         id: String(data.id || ''),
         nickname: data.nickname || data.nick_name || data.public_name || '',
-        avatar: data.larger_avatar_url?.urls?.[0] || data.avatar || data.avatar_url || '',
+        avatar,
       };
     } catch {
       return null;
