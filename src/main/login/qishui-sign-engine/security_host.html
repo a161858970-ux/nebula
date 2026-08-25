@@ -325,7 +325,19 @@
       window.__qishuiSecondVerify = async function (originDecision, options = {}) {
         setMfaStatus('正在加载汽水安全验证组件…');
         try {
+          trace('mfa.start', {
+            hasUrl: !!originDecision && !!originDecision.url,
+            verifyFrom: (originDecision && originDecision.verify_from) || '',
+            desc: (originDecision && originDecision.description) || '',
+            errorCode: (originDecision && originDecision.error_code) || 0,
+          });
           const decision = await expandVerifyCenterDecision(originDecision || {}, options);
+          trace('mfa.expanded', {
+            hasUrl: !!decision.url,
+            verifyFrom: decision.verify_from || '',
+            urlHost: (() => { try { return new URL(String(decision.url || '')).host; } catch (_) { return ''; } })(),
+            desc: decision.description || '',
+          });
           if (!decision.url) throw new Error('2046 决策中缺少二次验证组件 URL');
           const eventParams = normalizeObject(decision.event_params);
           const resource = new URL(String(decision.url), 'https://api.qishui.com/');
@@ -340,6 +352,12 @@
           if (typeof window.ucWebSecondVerify !== 'function') {
             throw new Error('官方二次验证组件未导出 ucWebSecondVerify');
           }
+          trace('mfa.component', {
+            loaded: true,
+            fnType: typeof window.ucWebSecondVerify,
+            hasReact: typeof window.React !== 'undefined',
+            hasReactDom: typeof window.ReactDOM !== 'undefined',
+          });
 
           setMfaStatus('请在窗口中完成二次验证');
           return await new Promise(resolve => {
@@ -348,6 +366,11 @@
               if (finished) return;
               finished = true;
               window.__qishuiMfaResolve = null;
+              trace('mfa.finish', {
+                status: !!(result && result.status),
+                message: (result && result.message) || '',
+                keys: result && typeof result === 'object' ? Object.keys(result).join(',') : '',
+              });
               const normalized = result && typeof result === 'object'
                 ? JSON.parse(JSON.stringify(result))
                 : { status: false, message: String(result || '验证未完成') };

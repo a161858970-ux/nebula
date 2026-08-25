@@ -399,8 +399,20 @@ export class QishuiLogin {
 
     // 二次验证处理
     if (Number(data.error_code) === 2046) {
+      console.log('[QishuiLogin] 2046 二次验证触发，envelope keys:', Object.keys(envelope).join(', '), 'data keys:', Object.keys(data).join(', '));
+      console.log('[QishuiLogin] 2046 envelope(截断):', JSON.stringify(envelope).slice(0, 2500));
       const decision = { ...envelope, ...data };
       if (!decision.verify_portrait_id) decision.verify_portrait_id = identity.verifyPortraitId;
+      console.log('[QishuiLogin] 2046 decision 关键字段:', JSON.stringify({
+        verify_from: decision.verify_from,
+        verify_way: decision.verify_way,
+        hasUrl: !!decision.url,
+        url: String(decision.url || '').slice(0, 180),
+        verify_portrait_id: decision.verify_portrait_id,
+        biz_params_type: typeof decision.biz_params,
+        description: decision.description || '',
+        error_code: decision.error_code,
+      }));
       
       // 显示二次验证窗口
       this.window?.setTitle('汽水音乐安全验证');
@@ -421,9 +433,21 @@ export class QishuiLogin {
           } })})`,
           true,
         );
+        console.log('[QishuiLogin] 二次验证结果:', JSON.stringify(verified).slice(0, 800));
         if (!verified || verified.status !== true) {
           throw new Error(verified?.message || '二次验证未完成');
         }
+      } catch (err) {
+        const trace = await this.window
+          ?.webContents.executeJavaScript('window.__qishuiSecurityTrace || []', true)
+          .catch(() => []);
+        console.log('[QishuiLogin] 二次验证异常:', String(err));
+        console.log('[QishuiLogin] security trace(截断):', JSON.stringify(trace).slice(0, 2500));
+        throw err;
+      } finally {
+        this.window?.hide();
+      }
+      try {
         // 重新发送请求
         envelope = await this.request('POST', '/passport/web/check_qrconnect/', { isResend: 'true' }, body);
         data = envelope.data || {};
