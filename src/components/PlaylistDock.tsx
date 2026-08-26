@@ -91,6 +91,8 @@ export const PlaylistDock = memo(function PlaylistDock({
 }: PlaylistDockProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(true);
+  // 大歌单增量渲染：一次性渲染上千行会卡死渲染进程（酷狗歌单可达 1300+ 首）
+  const [songLimit, setSongLimit] = useState(60);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const flipRef = useRef<{ id: string; from: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -98,6 +100,11 @@ export const PlaylistDock = memo(function PlaylistDock({
   // 面板收回时复位
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+
+  // songs 变化（新导入/切歌单）时重置增量渲染
+  useLayoutEffect(() => {
+    setSongLimit(60);
+  }, [songs]);
 
   // 原型 flipRow：开/关窗口时该行 FLIP 上移置顶，dock 整体上移
   useLayoutEffect(() => {
@@ -212,8 +219,16 @@ export const PlaylistDock = memo(function PlaylistDock({
                       ⬆ 回到顶部
                     </button>
                   </div>
-                  <div className="pl-songs">
-                    {songs.map((song, i) => (
+                  <div
+                    className="pl-songs"
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+                        setSongLimit((l) => Math.min(songs.length, l + 120));
+                      }
+                    }}
+                  >
+                    {songs.slice(0, songLimit).map((song, i) => (
                       <div
                         key={`${song.source}:${song.sourceId ?? i}`}
                         className="pl-song"
