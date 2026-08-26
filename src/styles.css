@@ -3244,6 +3244,9 @@ button:hover:not(:disabled),
   cursor: pointer;
   border-radius: 8px;
   transition: background 0.18s ease, box-shadow 0.18s ease;
+  /* 大歌单（上千行）优化：DOM 全量存在，浏览器只渲染视口内行，滚动条/查找不受影响 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
 }
 
 .pl-song:hover {
