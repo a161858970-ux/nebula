@@ -1,6 +1,7 @@
 import type { HttpClient } from '../http';
 import type {
   AlbumSummary,
+  AlbumDetail,
   ArtistSearchHit,
   ArtistInfo,
   CommentResult,
@@ -380,6 +381,33 @@ export class NeteaseAdapter implements PlatformAdapter {
       }));
     } catch {
       return [];
+    }
+  }
+
+  /** 专辑详情：/api/v1/album/{id}（album + songs）。 */
+  async fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+    try {
+      const res = await callNcmSafe('album', {
+        id: albumId,
+        cookie: this.cookies.getHeader('netease') ?? '',
+      });
+      const album = res?.body?.album;
+      if (!album) return null;
+      const tracks = (res?.body?.songs ?? [])
+        .map((s: Record<string, any>) => mapNeteaseTrack(s))
+        .filter((t: Track | null): t is Track => !!t);
+      return {
+        platform: 'netease',
+        id: String(album.id ?? albumId),
+        name: album.name ?? '',
+        cover: album.picUrl ?? '',
+        year: album.publishTime ? new Date(Number(album.publishTime)).getFullYear() : undefined,
+        artist: album.artist?.name,
+        tracks,
+      };
+    } catch (err) {
+      console.warn('[NeteaseAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      return null;
     }
   }
 }

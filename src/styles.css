@@ -1787,6 +1787,26 @@ body {
   flex-direction: column;
   gap: 5px;
   min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.ar-album:hover {
+  transform: translateY(-2px);
+  opacity: 0.9;
+}
+
+.ar-album-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .ar-album-cover {

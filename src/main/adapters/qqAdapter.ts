@@ -2,6 +2,7 @@ import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type {
   AlbumSummary,
+  AlbumDetail,
   ArtistSearchHit,
   ArtistInfo,
   CommentResult,
@@ -416,5 +417,13 @@ export class QqAdapter implements PlatformAdapter {
       year: a.publishDate ? Number(String(a.publishDate).slice(0, 4)) || undefined : undefined,
       songCount: a.totalNum,
     }));
+  }
+
+  /**
+   * 专辑详情：QQ musicu 专辑模块（AlbumInfoServer/AlbumDetailServer 等）当前均返回
+   * 104400/500003/40000，专辑详情接口暂不可用；返回 null 由前端降级展示。
+   */
+  async fetchAlbumDetail(): Promise<AlbumDetail | null> {
+    return null;
   }
 }

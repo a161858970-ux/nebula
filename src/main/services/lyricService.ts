@@ -1,6 +1,7 @@
 import type { AdapterMap } from '../adapters/index';
 import type {
   AlbumSummary,
+  AlbumDetail,
   ArtistInfo,
   ArtistSearchHit,
   CommentResult,
@@ -173,6 +174,16 @@ export class LyricService {
     } catch (err) {
       console.warn('[LyricService] 歌手专辑失败:', errMsg(err));
       return [];
+    }
+  }
+
+  async fetchAlbumDetail(platform: Platform, albumId: string): Promise<AlbumDetail | null> {
+    try {
+      const adapter = this.adapters[platform];
+      return adapter.fetchAlbumDetail ? await adapter.fetchAlbumDetail(albumId) : null;
+    } catch (err) {
+      console.warn('[LyricService] 专辑详情失败:', errMsg(err));
+      return null;
     }
   }
 

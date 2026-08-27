@@ -6,11 +6,13 @@ import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } fro
 import type { Track } from '../../lib/catalog';
 
 export interface InfoModalState {
-  kind: 'comments' | 'song' | 'artist';
+  kind: 'comments' | 'song' | 'artist' | 'album';
   track?: Track;
   platform?: string;
   artistId?: string;
   artistName?: string;
+  albumId?: string;
+  albumName?: string;
 }
 
 export interface ContextMenuState {
@@ -84,6 +86,11 @@ export function useOverlays() {
       .catch(() => setInfoModal({ kind: 'song', track: song }));
   }, []);
 
+  /** 歌手页专辑点击 → 专辑详情弹层。 */
+  const openAlbum = useCallback((platform: string, albumId: string, albumName: string) => {
+    setInfoModal({ kind: 'album', platform, albumId, albumName });
+  }, []);
+
   const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
     setInfoModal({ kind: 'artist', platform, artistId, artistName: name });
   }, []);
@@ -108,6 +115,7 @@ export function useOverlays() {
     openSongDetailModal,
     openArtistByName,
     openArtistFromChip,
+    openAlbum,
     playArtistTrack,
     setNowPlayingOpen,
     setModeToast,

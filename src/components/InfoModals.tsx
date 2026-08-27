@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Track } from '../lib/catalog';
 import { hasDesktopAPI, toBackendTrack } from '../lib/playlist/ipcClient';
 import type {
+  DesktopAlbumDetail,
   DesktopAlbumSummary,
   DesktopArtistInfo,
   DesktopSongDetail,
@@ -158,12 +159,14 @@ function ArtistPanel({
   artistId,
   artistName,
   onPlayTrack,
+  onOpenAlbum,
   onClose,
 }: {
   platform: string;
   artistId: string;
   artistName: string;
   onPlayTrack: (track: DesktopTrack) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onClose: () => void;
 }) {
   const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
@@ -212,16 +215,87 @@ function ArtistPanel({
         <div className="cmt-section">专辑（{albums.length}）</div>
         <div className="ar-albums">
           {albums.map((a) => (
-            <div key={a.id} className="ar-album">
+            <button
+              key={a.id}
+              className="ar-album"
+              onClick={() => onOpenAlbum(platform, a.id, a.name)}
+              title={`查看专辑《${a.name}》`}
+            >
               {a.cover ? <img className="ar-album-cover" src={a.cover} alt="" loading="lazy" /> : <span className="ar-album-cover is-ph" />}
               <div className="ar-album-meta">
                 <span className="ar-album-name">{a.name}</span>
                 <span className="ar-album-year">{a.year ?? ''}{a.songCount ? ` · ${a.songCount} 首` : ''}</span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
+    </ModalShell>
+  );
+}
+
+/** 专辑详情弹层：信息 + 专辑歌曲列表（点播走歌手页同款链路）。 */
+function AlbumPanel({
+  platform,
+  albumId,
+  albumName,
+  onPlayTrack,
+  onClose,
+}: {
+  platform: string;
+  albumId: string;
+  albumName: string;
+  onPlayTrack: (track: DesktopTrack) => void;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<DesktopAlbumDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!hasDesktopAPI()) return;
+    let cancelled = false;
+    window.nebulaAPI!
+      .albumDetail(platform, albumId)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok && res.data) setDetail(res.data);
+        else setFailed(true);
+      })
+      .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, albumId]);
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="cmt-section">专辑</div>
+      <div className="ar-head">
+        {detail?.cover ? (
+          <img className="ar-avatar" src={detail.cover} alt="" />
+        ) : (
+          <span className="ar-avatar is-ph" />
+        )}
+        <div className="ar-meta">
+          <div className="ar-name">{detail?.name || albumName}</div>
+          {detail?.artist && <div className="ar-desc">歌手：{detail.artist}</div>}
+          {detail?.year != null && <div className="ar-desc">发行年份：{detail.year}</div>}
+        </div>
+      </div>
+      <div className="cmt-section">歌曲（{detail?.tracks.length ?? 0}）</div>
+      {failed && <div className="ar-desc">该平台专辑歌曲暂不可用（QQ 专辑接口受限）</div>}
+      {detail?.tracks.map((t) => (
+        <button
+          key={`${t.platform}:${t.sourceId}`}
+          className="ar-song"
+          onClick={() => {
+            onPlayTrack(t);
+            onClose();
+          }}
+        >
+          <span className="ar-song-name">{t.title}</span>
+          <span className="ar-song-album">{t.artist}</span>
+        </button>
+      ))}
     </ModalShell>
   );
 }
@@ -230,11 +304,21 @@ export function InfoModals({
   modal,
   onClose,
   onOpenArtist,
+  onOpenAlbum,
   onPlayArtistTrack,
 }: {
-  modal: { kind: 'comments' | 'song' | 'artist'; track?: Track; platform?: string; artistId?: string; artistName?: string } | null;
+  modal: {
+    kind: 'comments' | 'song' | 'artist' | 'album';
+    track?: Track;
+    platform?: string;
+    artistId?: string;
+    artistName?: string;
+    albumId?: string;
+    albumName?: string;
+  } | null;
   onClose: () => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onPlayArtistTrack: (track: DesktopTrack) => void;
 }) {
   if (!modal) return null;
@@ -250,6 +334,21 @@ export function InfoModals({
         platform={modal.platform}
         artistId={modal.artistId}
         artistName={modal.artistName ?? ''}
+        onOpenAlbum={onOpenAlbum}
+        onPlayTrack={(t) => {
+          onPlayArtistTrack(t);
+          onClose();
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+  if (modal.kind === 'album' && modal.platform && modal.albumId) {
+    return (
+      <AlbumPanel
+        platform={modal.platform}
+        albumId={modal.albumId}
+        albumName={modal.albumName ?? ''}
         onPlayTrack={(t) => {
           onPlayArtistTrack(t);
           onClose();

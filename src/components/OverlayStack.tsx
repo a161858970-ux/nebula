@@ -27,6 +27,7 @@ interface OverlayStackProps {
   onApplyWallpaper: (item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => void;
   onCloseInfo: () => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onPlayArtistTrack: (t: DesktopTrack) => void;
   onCloseContextMenu: () => void;
   onInsertNext: (track: Track) => void;
@@ -56,6 +57,7 @@ export const OverlayStack = memo(function OverlayStack({
   onApplyWallpaper,
   onCloseInfo,
   onOpenArtist,
+  onOpenAlbum,
   onPlayArtistTrack,
   onCloseContextMenu,
   onInsertNext,
@@ -81,6 +83,7 @@ export const OverlayStack = memo(function OverlayStack({
         modal={infoModal}
         onClose={onCloseInfo}
         onOpenArtist={onOpenArtist}
+        onOpenAlbum={onOpenAlbum}
         onPlayArtistTrack={onPlayArtistTrack}
       />
       {modeToast && <div className="mode-toast">{modeToast}</div>}

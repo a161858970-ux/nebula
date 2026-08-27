@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-08-27 — 歌手页专辑详情：重叠修复 + 专辑可点击进入/点播
+
+**目标**
+
+1. 歌手页专辑区「专辑名与发行日期」重叠。
+2. 专辑区从纯显示升级为可点击：进入专辑详情（信息 + 歌曲列表 + 点播）。
+
+**改动**
+
+- `styles.css`：`.ar-album-meta` 补 flex column（此前无定义导致 span 并排/重叠）；`.ar-album` 按钮化（reset + hover 上浮）。
+- 后端：`PlatformAdapter.fetchAlbumDetail` + `AlbumDetail` 类型；网易云（`/api/v1/album/{id}`）、Spotify（官方 `/albums/{id}` + `/tracks`）实现；QQ 专辑 musicu 模块（AlbumInfoServer/AlbumDetailServer/AlbumListServer × GetAlbumDetail/GetAlbumInfo/GetAlbumSongList 共 8 组合）均返回 104400/500003/40000/para error，暂返回 null 降级；IPC `nebula:album-detail` + `LyricService.fetchAlbumDetail`。
+- 前端：`InfoModals` 新增 `AlbumPanel`（信息 + 歌曲列表 + 点播走歌手页同款链路）；`ArtistPanel` 专辑卡片可点击；`useOverlays.openAlbum`；OverlayStack/App 接线。
+
+**验证**
+
+- 实测网易云 `/api/v1/album/32311` 返回专辑+9 首；Spotify 官方接口；QQ 接口确认不可用。tsc / qa:backend（26/26）/ 前端 qa 全绿。
+
+**遗留**
+
+- QQ 专辑详情接口暂不可用（前端显示专辑信息 + 提示）；若要支持 QQ 专辑歌曲，需逆向其新版专辑接口（另行排期）。
+
 ## 2026-08-26 — 酷狗大歌单卡死真正根因：千行 DOM 同步渲染 → content-visibility 优化
 
 **目标**

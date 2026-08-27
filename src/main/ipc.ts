@@ -96,6 +96,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:artist-albums', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistAlbums(platform, String(artistId)),
   );
+  safe('nebula:album-detail', async ({ platform, albumId }: { platform: Platform; albumId: string }) =>
+    deps.lyricService.fetchAlbumDetail(platform, String(albumId)),
+  );
   safe('nebula:search-songs', async ({ keyword, pageSize }: { keyword: string; pageSize?: number }) =>
     deps.lyricService.searchSongs(String(keyword), Number(pageSize) || 8),
   );

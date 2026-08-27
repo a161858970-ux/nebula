@@ -114,6 +114,17 @@ export interface DesktopAlbumSummary {
   songCount?: number;
 }
 
+/** 专辑详情（歌手页专辑点击进入）。 */
+export interface DesktopAlbumDetail {
+  platform: string;
+  id: string;
+  name: string;
+  cover: string;
+  year?: number;
+  artist?: string;
+  tracks: DesktopTrack[];
+}
+
 /** 全网歌手搜索命中（含平台定位，可直接打开歌手页）。 */
 export interface DesktopArtistHit {
   platform: string;
@@ -135,6 +146,7 @@ export interface DesktopApi {
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
   artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
+  albumDetail: (platform: string, albumId: string) => IpcResult<DesktopAlbumDetail | null>;
   searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopTrack[]>;
   searchArtists: (keyword: string, pageSize?: number) => IpcResult<DesktopArtistHit[]>;
   loginQr: () => IpcResult<{ unikey: string; payload: string }>;

@@ -1,6 +1,6 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
-import type { Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
+import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
 
 const API = 'https://api.spotify.com/v1';
 
@@ -97,6 +97,39 @@ export class SpotifyAdapter implements PlatformAdapter {
         .filter((p) => p.id);
     } catch {
       return [];
+    }
+  }
+
+  /** 专辑详情：官方 /albums/{id} + /albums/{id}/tracks。 */
+  async fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+    try {
+      const [album, tracksData] = await Promise.all([
+        this.authedRequest<{
+          id?: string;
+          name?: string;
+          images?: Array<{ url?: string }>;
+          artists?: Array<{ name?: string }>;
+          release_date?: string;
+          tracks?: { items?: Array<{ track?: Record<string, any> }> };
+        }>(`${API}/albums/${encodeURIComponent(albumId)}`),
+        this.authedRequest<{ items?: Array<Record<string, any>> }>(
+          `${API}/albums/${encodeURIComponent(albumId)}/tracks?limit=50`,
+        ),
+      ]);
+      if (!album?.id) return null;
+      const tracks = (tracksData?.items ?? []).map(mapSpotifyTrack).filter((t): t is Track => !!t);
+      return {
+        platform: 'spotify',
+        id: String(album.id),
+        name: album.name ?? '',
+        cover: album.images?.[0]?.url ?? '',
+        year: album.release_date ? Number(String(album.release_date).slice(0, 4)) || undefined : undefined,
+        artist: album.artists?.[0]?.name,
+        tracks,
+      };
+    } catch (err) {
+      console.warn('[SpotifyAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      return null;
     }
   }
 

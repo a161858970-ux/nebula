@@ -119,6 +119,8 @@ export interface PlatformAdapter {
   fetchArtistInfo?(artistId: string): Promise<ArtistInfo | null>;
   fetchArtistSongs?(artistId: string): Promise<Track[]>;
   fetchArtistAlbums?(artistId: string): Promise<AlbumSummary[]>;
+  /** 专辑详情（netease/spotify 实现；qq 当前接口不可用返回 null）。 */
+  fetchAlbumDetail?(albumId: string): Promise<AlbumDetail | null>;
   /** Only fallback platforms (kugou) implement: keyword search. */
   searchSongs?(keyword: string, pageSize?: number): Promise<Track[]>;
   /** 关键词搜歌手（netease/qq），返回带平台定位的命中。 */
@@ -184,4 +186,16 @@ export interface AlbumSummary {
   cover: string;
   year?: number;
   songCount?: number;
+}
+
+/** 专辑详情（供歌手页专辑点击进入）。 */
+export interface AlbumDetail {
+  platform: Platform;
+  id: string;
+  name: string;
+  cover: string;
+  year?: number;
+  artist?: string;
+  /** 专辑内歌曲（点播走既有取链/兜底链路）。 */
+  tracks: Track[];
 }

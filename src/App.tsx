@@ -103,6 +103,7 @@ export default function App() {
     openSongDetailModal,
     openArtistByName,
     openArtistFromChip,
+    openAlbum,
     playArtistTrack,
     setNowPlayingOpen,
     setModeToast,
@@ -609,6 +610,7 @@ export default function App() {
         onApplyWallpaper={handleWallpaperApply}
         onCloseInfo={closeInfo}
         onOpenArtist={openArtistFromChip}
+        onOpenAlbum={openAlbum}
         onPlayArtistTrack={handlePlayArtistTrack}
         onCloseContextMenu={closeContextMenu}
         onInsertNext={insertNextSong}
