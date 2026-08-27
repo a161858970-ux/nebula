@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-08-27 — 黑屏修复 + QQ 专辑接口攻破（legacy fcg_v8_album_info_cp.fcg）
+
+**目标**
+
+1. 点击歌手页专辑后全软件黑屏、无法操作。
+2. 攻破 QQ 专辑详情最新可用接口，补齐 QQ 专辑歌曲列表。
+
+**黑屏根因**
+
+- `electron/preload.cjs` 漏暴露 `albumDetail` IPC（`nebula:album-detail` 已在主进程注册），渲染进程 `window.nebulaAPI.albumDetail` 为 undefined → 点击专辑调用抛错 → React 无错误边界 → 整页黑屏。
+
+**改动**
+
+- `preload.cjs`：补 `albumDetail(platform, albumId)` 暴露。
+- `InfoModals.tsx`：`AlbumPanel` 增加 `!window.nebulaAPI?.albumDetail` 防御降级；失败提示改为通用文案（不再特指 QQ）。
+- `QqAdapter.fetchAlbumDetail`：攻破 legacy `c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg?albummid=...`（需 `platform=yqq.json&needNewCode=1&g_tk=5381`），返回基本信息 + 完整曲目列表（字段与 `mapQQTrack` 直接兼容）。
+  - 排查过程：新版 musicu 专辑模块（AlbumInfoServer/AlbumDetailServer/AlbumListServer/AlbumSongListServer × GetAlbumDetail/GetAlbumInfo/GetAlbumSongList + 各参数形态）全部失败（104400/40000/500003）；网页端无头抓包停在「加载中」不发专辑请求；最终 legacy v8 fcg 接口可用（此前 1101 系参数不全：缺 `platform`/`g_tk`）。
+- `types.ts`：`fetchAlbumDetail` 注释更新（netease/spotify/qq 已实现；kugou/qishui 未接入返回 null）。
+
+**验证**
+
+- 实测 QQ 专辑 `000MkMni19ClKG`（叶惠美）返回 11 首完整曲目；`tsc`、`qa:backend`（26/26）、前端 `qa` 全绿。
+
+**遗留**
+
+- 酷狗/汽水专辑详情仍未接入（返回 null → 前端提示不可用）。是否将其他平台专辑点击路由到网易云/QQ 专辑（标题+歌手双重校验），待用户拍板。
+
 ## 2026-08-27 — 歌手页专辑详情：重叠修复 + 专辑可点击进入/点播
 
 **目标**

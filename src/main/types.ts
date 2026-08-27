@@ -119,7 +119,7 @@ export interface PlatformAdapter {
   fetchArtistInfo?(artistId: string): Promise<ArtistInfo | null>;
   fetchArtistSongs?(artistId: string): Promise<Track[]>;
   fetchArtistAlbums?(artistId: string): Promise<AlbumSummary[]>;
-  /** 专辑详情（netease/spotify 实现；qq 当前接口不可用返回 null）。 */
+  /** 专辑详情（netease/spotify/qq 实现；kugou/qishui 未接入返回 null）。 */
   fetchAlbumDetail?(albumId: string): Promise<AlbumDetail | null>;
   /** Only fallback platforms (kugou) implement: keyword search. */
   searchSongs?(keyword: string, pageSize?: number): Promise<Track[]>;

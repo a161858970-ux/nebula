@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   artistInfo: (platform, artistId) => ipcRenderer.invoke('nebula:artist-info', { platform, artistId }),
   artistSongs: (platform, artistId) => ipcRenderer.invoke('nebula:artist-songs', { platform, artistId }),
   artistAlbums: (platform, artistId) => ipcRenderer.invoke('nebula:artist-albums', { platform, artistId }),
+  albumDetail: (platform, albumId) => ipcRenderer.invoke('nebula:album-detail', { platform, albumId }),
   searchSongs: (keyword, pageSize) => ipcRenderer.invoke('nebula:search-songs', { keyword, pageSize }),
   searchArtists: (keyword, pageSize) => ipcRenderer.invoke('nebula:search-artists', { keyword, pageSize }),
   loginQr: () => ipcRenderer.invoke('nebula:login:qr'),

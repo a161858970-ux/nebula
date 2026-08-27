@@ -251,7 +251,10 @@ function AlbumPanel({
   const [detail, setDetail] = useState<DesktopAlbumDetail | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!hasDesktopAPI()) return;
+    if (!hasDesktopAPI() || !window.nebulaAPI?.albumDetail) {
+      setFailed(true);
+      return;
+    }
     let cancelled = false;
     window.nebulaAPI!
       .albumDetail(platform, albumId)
@@ -282,7 +285,7 @@ function AlbumPanel({
         </div>
       </div>
       <div className="cmt-section">歌曲（{detail?.tracks.length ?? 0}）</div>
-      {failed && <div className="ar-desc">该平台专辑歌曲暂不可用（QQ 专辑接口受限）</div>}
+        {failed && <div className="ar-desc">该平台专辑歌曲暂不可用</div>}
       {detail?.tracks.map((t) => (
         <button
           key={`${t.platform}:${t.sourceId}`}

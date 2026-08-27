@@ -420,10 +420,40 @@ export class QqAdapter implements PlatformAdapter {
   }
 
   /**
-   * 专辑详情：QQ musicu 专辑模块（AlbumInfoServer/AlbumDetailServer 等）当前均返回
-   * 104400/500003/40000，专辑详情接口暂不可用；返回 null 由前端降级展示。
+   * 专辑详情：legacy fcg_v8_album_info_cp.fcg（albummid 参数），
+   * 返回基本信息 + 完整曲目列表（songmid/singer/albummid 与 mapQQTrack 兼容）。
    */
-  async fetchAlbumDetail(): Promise<AlbumDetail | null> {
-    return null;
+  async fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+    try {
+      const data = await this.http.requestJson<{
+        code?: number;
+        data?: {
+          mid?: string;
+          name?: string;
+          singermid?: string;
+          singername?: string;
+          aDate?: string;
+          list?: Array<Record<string, any>>;
+        };
+      }>(
+        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg?albummid=${encodeURIComponent(albumId)}&format=json&inCharset=utf-8&outCharset=utf-8&platform=yqq.json&needNewCode=1&g_tk=5381`,
+        { platform: 'qq' },
+      );
+      const d = data?.data;
+      if (!d || !Array.isArray(d.list)) return null;
+      const tracks = d.list.map(mapQQTrack).filter((t): t is Track => !!t);
+      return {
+        platform: 'qq',
+        id: String(d.mid ?? albumId),
+        name: d.name ?? '',
+        cover: d.mid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${d.mid}.jpg` : '',
+        year: d.aDate ? Number(String(d.aDate).slice(0, 4)) || undefined : undefined,
+        artist: d.singername || undefined,
+        tracks,
+      };
+    } catch (err) {
+      console.warn('[QqAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      return null;
+    }
   }
 }
