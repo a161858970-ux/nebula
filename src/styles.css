@@ -1670,10 +1670,96 @@ body {
 }
 
 .sd-album {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  margin-top: 4px;
-}
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-top: 4px;
+  }
+
+  .sd-album-link {
+    display: block;
+    padding: 0;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.18s ease, text-shadow 0.18s ease;
+  }
+
+  .sd-album-link:hover {
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+  }
+
+  .cmt-more {
+    margin: 10px auto 4px;
+    padding: 7px 18px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  .cmt-more:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.13);
+    color: #fff;
+  }
+
+  .cmt-more:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .cmt-section-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ar-more {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    transition: color 0.18s ease, text-shadow 0.18s ease;
+  }
+
+  .ar-more:hover {
+    color: rgba(255, 255, 255, 0.95);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+  }
+
+  .info-head-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .info-back {
+    border: none;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 999px;
+    padding: 4px 12px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  .info-back:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+  }
+
+  .info-head-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
 .sd-credits {
   display: flex;

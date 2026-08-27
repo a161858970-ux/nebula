@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Track } from '../lib/catalog';
 import { hasDesktopAPI, toBackendTrack } from '../lib/playlist/ipcClient';
 import type {
   DesktopAlbumDetail,
   DesktopAlbumSummary,
   DesktopArtistInfo,
+  DesktopCommentResult,
   DesktopSongDetail,
   DesktopTrack,
 } from '../lib/playlist/ipcClient';
@@ -39,22 +40,64 @@ interface CommentItem {
 function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }) {
   const [hot, setHot] = useState<CommentItem[]>([]);
   const [latest, setLatest] = useState<CommentItem[]>([]);
+  const [latestTotal, setLatestTotal] = useState<number | undefined>();
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     if (!hasDesktopAPI()) return;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    setUnavailable(false);
     window.nebulaAPI!
-      .fetchComments(toBackendTrack(track))
+      .fetchComments(toBackendTrack(track), 0)
       .then((res) => {
+        if (cancelled) return;
         if (!res.ok) {
           setError(res.error);
           return;
         }
-        const d = res.data as { hot?: CommentItem[]; latest?: CommentItem[] } | null;
+        const d = res.data as DesktopCommentResult | null;
+        if (!d) {
+          setUnavailable(true);
+          return;
+        }
         setHot(d?.hot ?? []);
         setLatest(d?.latest ?? []);
+        setLatestTotal(d.latestTotal);
+        setHasMore(!!d.hasMoreLatest);
       })
-      .catch(() => setError('评论加载失败'));
+      .catch(() => !cancelled && setError('评论加载失败'))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [track]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasDesktopAPI()) return;
+    setLoadingMore(true);
+    const next = page + 1;
+    window.nebulaAPI!
+      .fetchComments(toBackendTrack(track), next)
+      .then((res) => {
+        const d = res.ok ? (res.data as DesktopCommentResult | null) : null;
+        if (!d) {
+          setHasMore(false);
+          return;
+        }
+        setLatest((prev) => [...prev, ...(d.latest ?? [])]);
+        setLatestTotal(d.latestTotal);
+        setHasMore(!!d.hasMoreLatest);
+        setPage(next);
+      })
+      .catch(() => setHasMore(false))
+      .finally(() => setLoadingMore(false));
+  }, [track, page, loadingMore]);
 
   const Row = ({ c }: { c: CommentItem }) => (
     <div className="cmt-row">
@@ -72,11 +115,17 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
       <div className="info-head">评论</div>
       <div className="info-scroll">
         {error && <ErrorLine text={error} />}
-        {!error && !hot.length && !latest.length && <Loading />}
+        {unavailable && <ErrorLine text="该平台暂无评论" />}
+        {!error && !unavailable && loading && <Loading />}
         {!!hot.length && <div className="cmt-section">热门评论</div>}
         {hot.map((c, i) => <Row key={`h${i}`} c={c} />)}
-        {!!latest.length && <div className="cmt-section">最新评论</div>}
+        {!!latest.length && <div className="cmt-section">最新评论{latestTotal ? `（共 ${latestTotal} 条）` : ''}</div>}
         {latest.map((c, i) => <Row key={`l${i}`} c={c} />)}
+        {hasMore && (
+          <button className="cmt-more" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? '加载中…' : '加载更多评论'}
+          </button>
+        )}
       </div>
     </ModalShell>
   );
@@ -84,57 +133,93 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
 
 /* ---------- 歌曲详情 ---------- */
 
+/** 把曲目的 artist 字符串拆成可点击的歌手引用（无平台 id，走名字转译路由）。 */
+function splitTrackArtists(artist: string): Array<{ id: string; name: string }> {
+  return String(artist || '')
+    .split(/[\/、&,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((name) => ({ id: '', name }));
+}
+
 function SongDetailPanel({
   track,
   onOpenArtist,
+  onOpenAlbum,
   onClose,
 }: {
   track: Track;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<DesktopSongDetail | null>(null);
+  const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!hasDesktopAPI()) return;
+    let cancelled = false;
     window.nebulaAPI!
       .songDetail(toBackendTrack(track))
       .then((res) => {
-        if (res.ok) setDetail(res.data);
+        if (cancelled) return;
+        if (res.ok && res.data) setDetail(res.data);
+        else if (res.ok) setMissing(true);
         else setError(res.error);
       })
-      .catch(() => setError('详情加载失败'));
+      .catch(() => !cancelled && setError('详情加载失败'));
+    return () => {
+      cancelled = true;
+    };
   }, [track]);
+
+  const artists = detail?.artists?.length
+    ? detail.artists
+    : missing
+      ? splitTrackArtists(track.artist)
+      : [];
+  const platform = detail?.platform ?? track.source;
+  const albumId = detail?.album.id ?? '';
+  const albumName = detail?.album.name || track.album || '';
+  const albumCover = detail?.album.cover || track.cover || '';
+  const openAlbumClick = () => {
+    if (!albumName) return;
+    onOpenAlbum(platform, albumId, albumName, artists[0]?.name || track.artist);
+  };
 
   return (
     <ModalShell onClose={onClose}>
       <div className="info-head">歌曲详情</div>
       <div className="info-scroll">
         {error && <ErrorLine text={error} />}
-        {!error && !detail && <Loading />}
-        {detail && (
+        {!error && !detail && !missing && <Loading />}
+        {(detail || missing) && (
           <div className="sd-wrap">
             <div className="sd-cover-row">
-              {detail.album.cover ? (
-                <img className="sd-cover" src={detail.album.cover} alt="" />
+              {albumCover ? (
+                <img className="sd-cover" src={albumCover} alt="" />
               ) : (
                 <span className="sd-cover is-ph" />
               )}
               <div className="sd-info">
-                <div className="sd-title">{detail.title}</div>
+                <div className="sd-title">{detail?.title || track.title}</div>
                 <div className="sd-artists">
-                  {detail.artists.map((a) => (
-                    <button key={a.id || a.name} className="sd-chip" onClick={() => onOpenArtist(detail.platform, a.id, a.name)}>
+                  {artists.map((a) => (
+                    <button key={a.id || a.name} className="sd-chip" onClick={() => onOpenArtist(platform, a.id, a.name)}>
                       {a.name}
                     </button>
                   ))}
                 </div>
-                <div className="sd-album">专辑：{detail.album.name || '未知'}</div>
-                {detail.album.publishDate && <div className="sd-album">发行：{detail.album.publishDate}</div>}
-                {detail.duration != null && <div className="sd-album">时长：{Math.floor(detail.duration / 60)}:{String(detail.duration % 60).padStart(2, '0')}</div>}
+                {albumName && (
+                  <button className="sd-album sd-album-link" onClick={openAlbumClick} title="查看专辑">
+                    专辑：{albumName}
+                  </button>
+                )}
+                {detail?.album.publishDate && <div className="sd-album">发行：{detail.album.publishDate}</div>}
+                {detail?.duration != null && <div className="sd-album">时长：{Math.floor(detail.duration / 60)}:{String(detail.duration % 60).padStart(2, '0')}</div>}
               </div>
             </div>
-            {!!detail.credits?.length && (
+            {!!detail?.credits?.length && (
               <div className="sd-credits">
                 <div className="cmt-section">制作团队</div>
                 {detail.credits.map((c, i) => (
@@ -168,13 +253,16 @@ function ArtistPanel({
   onPlayTrack: (track: DesktopTrack) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onClose: () => void;
-}) {
-  const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
-  const [songs, setSongs] = useState<DesktopTrack[]>([]);
-  const [albums, setAlbums] = useState<DesktopAlbumSummary[]>([]);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!hasDesktopAPI()) return;
+  }) {
+    const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
+    const [songs, setSongs] = useState<DesktopTrack[]>([]);
+    const [albums, setAlbums] = useState<DesktopAlbumSummary[]>([]);
+    const [view, setView] = useState<'overview' | 'all-songs'>('overview');
+    const [allSongs, setAllSongs] = useState<DesktopTrack[] | null>(null);
+    const [allLoading, setAllLoading] = useState(false);
+    const [error, setError] = useState('');
+    useEffect(() => {
+      if (!hasDesktopAPI()) return;
     const api = window.nebulaAPI!;
     Promise.all([
       api.artistInfo(platform, artistId),
@@ -186,11 +274,48 @@ function ArtistPanel({
         if (s.ok) setSongs(s.data);
         if (a.ok) setAlbums(a.data);
       })
-      .catch(() => setError('歌手信息加载失败'));
-  }, [platform, artistId]);
+        .catch(() => setError('歌手信息加载失败'));
+    }, [platform, artistId]);
 
-  return (
-    <ModalShell onClose={onClose}>
+    const openAllSongs = useCallback(() => {
+      setView('all-songs');
+      if (allSongs !== null) return;
+      setAllLoading(true);
+      window.nebulaAPI!
+        .artistSongsAll(platform, artistId)
+        .then((res) => setAllSongs(res.ok ? res.data : []))
+        .catch(() => setAllSongs([]))
+        .finally(() => setAllLoading(false));
+    }, [platform, artistId, allSongs]);
+
+    if (view === 'all-songs') {
+      return (
+        <ModalShell onClose={onClose}>
+          <div className="info-head info-head-row">
+            <button className="info-back" onClick={() => setView('overview')}>← 返回</button>
+            <span className="info-head-title">{artistName} · 全部歌曲</span>
+          </div>
+          <div className="info-scroll">
+            {allLoading && <Loading />}
+            {!allLoading && allSongs && (
+              <>
+                <div className="cmt-section">歌曲（{allSongs.length}）</div>
+                {allSongs.map((s, i) => (
+                  <button key={s.sourceId + i} className="ar-song" onDoubleClick={() => onPlayTrack(s)}>
+                    <span className="ar-song-idx">{i + 1}</span>
+                    <span className="ar-song-name">{s.title}</span>
+                    <span className="ar-song-album">{s.album}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </ModalShell>
+      );
+    }
+
+    return (
+      <ModalShell onClose={onClose}>
       <div className="info-head">歌手主页</div>
       <div className="info-scroll">
         {error && <ErrorLine text={error} />}
@@ -201,11 +326,14 @@ function ArtistPanel({
             <div className="ar-meta">
               <div className="ar-name">{info.name || artistName}</div>
               {info.description && <div className="ar-desc">{info.description}</div>}
+              </div>
             </div>
+          )}
+          <div className="cmt-section cmt-section-row">
+            <span>歌曲（{songs.length}）</span>
+            <button className="ar-more" onClick={openAllSongs}>查看全部</button>
           </div>
-        )}
-        <div className="cmt-section">歌曲（{songs.length}）</div>
-        {songs.map((s, i) => (
+          {songs.map((s, i) => (
           <button key={s.sourceId + i} className="ar-song" onDoubleClick={() => onPlayTrack(s)}>
             <span className="ar-song-idx">{i + 1}</span>
             <span className="ar-song-name">{s.title}</span>
@@ -329,7 +457,14 @@ export function InfoModals({
     return <CommentsPanel track={modal.track} onClose={onClose} />;
   }
   if (modal.kind === 'song' && modal.track) {
-    return <SongDetailPanel track={modal.track} onOpenArtist={onOpenArtist} onClose={onClose} />;
+    return (
+      <SongDetailPanel
+        track={modal.track}
+        onOpenArtist={onOpenArtist}
+        onOpenAlbum={onOpenAlbum}
+        onClose={onClose}
+      />
+    );
   }
   if (modal.kind === 'artist' && modal.platform && modal.artistId) {
     return (

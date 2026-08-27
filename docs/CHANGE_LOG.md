@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-08-27 — 跨平台歌手/专辑转译路由 + 专辑点播 VIP 路由 + 评论/歌手全曲/详情跳转/头像修复
+
+**目标**
+
+1. 酷狗/汽水/Spotify（及 id 缺失场景）的歌手名、专辑名点击 → 转译路由到网易云/QQ 对应歌手页/专辑页。
+2. 专辑内歌曲点播走多平台 VIP 路由，避免无完整播放。
+3. 评论：仅网易云可用的现状 → QQ 修复 + 全平台分页「加载更多」；无评论平台不再卡加载中。
+4. 歌手页新增「查看全部歌曲」（分页拉全，纯歌曲列表）。
+5. 歌曲详情页专辑名可点击跳转专辑页（与专辑策略联动），歌手/专辑 hover 发光。
+6. 网易云歌手头像不加载修复。
+
+**改动（后端）**
+
+- `NeteaseAdapter`：
+  - `searchAlbums`（type=10 专辑搜索，供专辑转译）；
+  - `fetchArtistAllSongs`（artist_songs 分页拉全，实测周杰伦 566 首）；
+  - `fetchComments(songId, page)` 分页（`more` 字段判断 hasMore，实测晴天 total 197 万、逐页 20 条）；
+  - `fetchArtistInfo` 头像字段修正为 `avatar || img1v1Url || picUrl || cover`（artist_detail 实际返回 avatar/cover）。
+- `QqAdapter`：
+  - `fetchComments(songmid, page)` 重写：`topid` 需数字 songid（先经 get_song_detail_yqq 解析），cmd=6 热门 / cmd=8 全部分页（25/页），字段映射修正（rootcommentnick/praisenum）；
+  - `fetchArtistAllSongs`（GetSingerSongList 单页上限 30，按 totalNum 分页拉全，实测周杰伦 1013 首）。
+- `LyricService`：`resolveArtistByName`（网易云+QQ 搜歌手，标题相似度取最佳）、`resolveAlbumByTitle`（网易云搜专辑 + 歌手名双重校验，歌手不一致降权）、`fetchArtistAllSongs`、`fetchComments` 透传 page。
+- `types.ts`：`CommentResult` 加 `latestTotal/hasMoreLatest`；`PlatformAdapter` 加 `searchAlbums/fetchArtistAllSongs`，`fetchComments` 支持 page；`AlbumSummary` 加可选 `artist`。
+- IPC/preload：`nebula:comments` 支持 page；新增 `artist-songs-all`、`resolve-artist-by-name`、`resolve-album-by-title`。
+
+**改动（前端）**
+
+- `useOverlays`：`openArtistFromChip`/`openArtistByName`/`openAlbum` 全部接入名字转译路由（netease/qq 带 id 直开，其他平台按名搜索，未命中 toast 提示）。
+- `InfoModals`：
+  - `CommentsPanel`：null 结果显示「该平台暂无评论」（不再无限加载中）；分页加载更多 + 总数显示；
+  - `SongDetailPanel`：详情缺失时用曲目本身兜底渲染（歌手/专辑仍可点，走名字路由）；专辑名可点击跳专辑页；
+  - `ArtistPanel`：歌曲区新增「查看全部」→ 全量歌曲纯列表视图（返回按钮回歌手主页）。
+- `styles.css`：专辑名/「查看全部」hover 发光、评论加载更多按钮、返回按钮、区块标题行。
+- 新增 `scripts/live-check-new.mjs`（`pnpm qa:live-new`）：12 项在线链路验证全绿。
+
+**验证**
+
+- `tsc`、`qa:backend`（26/26）、前端 `qa` 全绿；`pnpm qa:live-new` 12/12（专辑搜索/歌手全曲/评论分页/头像/双平台名字转译）。
+
+**遗留**
+
+- 酷狗/汽水/Spotify 评论接口未实现（显示「该平台暂无评论」，不再卡加载）；如需可后续按平台接入。
+- Spotify 歌手接口仍未实现；其歌曲详情/专辑点击均走名字转译路由。
+
 ## 2026-08-27 — 黑屏修复 + QQ 专辑接口攻破（legacy fcg_v8_album_info_cp.fcg）
 
 **目标**

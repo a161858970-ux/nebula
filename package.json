@@ -12,6 +12,7 @@
     "desktop": "node scripts/desktop-check.mjs && electron .",
     "qa:backend": "pnpm build:main && node scripts/backend-smoke.mjs",
     "qa:qq-live": "pnpm build:main && node scripts/qq-live-check.mjs",
+    "qa:live-new": "pnpm build:main && node scripts/live-check-new.mjs",
     "qa:desktop-play": "node scripts/desktop-play-smoke.mjs",
     "preview": "vite preview",
     "qa": "node scripts/check-arch.mjs && node scripts/qa.cjs",

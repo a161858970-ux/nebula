@@ -279,13 +279,41 @@ export class NeteaseAdapter implements PlatformAdapter {
     }
   }
 
-  async fetchComments(songId: string): Promise<CommentResult | null> {
+  /** 关键词搜专辑（供跨平台专辑转译路由）。type=10 为专辑。 */
+  async searchAlbums(keyword: string, pageSize = 8): Promise<AlbumSummary[]> {
+    try {
+      const data = await this.http.requestJson<{
+        result?: { albums?: Array<Record<string, any>> };
+      }>(
+        `https://music.163.com/api/search/get/web?s=${encodeURIComponent(keyword)}&type=10&offset=0&limit=${pageSize}`,
+        { platform: 'netease' },
+      );
+      return (data?.result?.albums ?? [])
+        .map((a) => ({
+          platform: 'netease' as const,
+          id: String(a.id ?? ''),
+          name: String(a.name ?? ''),
+          cover: a.picUrl ?? '',
+          artist: a.artist?.name ?? '',
+          year: a.publishTime ? new Date(Number(a.publishTime)).getFullYear() : undefined,
+          songCount: a.size,
+        }))
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn('[NeteaseAdapter] searchAlbums failed:', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
+  async fetchComments(songId: string, page = 0): Promise<CommentResult | null> {
     try {
       const data = await this.http.requestJson<{
         hotComments?: Array<Record<string, any>>;
         comments?: Array<Record<string, any>>;
+        total?: number;
+        more?: boolean;
       }>(
-        `https://music.163.com/api/v1/resource/comments/R_SO_4_${encodeURIComponent(songId)}?limit=20&offset=0`,
+        `https://music.163.com/api/v1/resource/comments/R_SO_4_${encodeURIComponent(songId)}?limit=20&offset=${page * 20}`,
         { platform: 'netease' },
       );
       const map = (list: Array<Record<string, any>> | undefined) =>
@@ -296,7 +324,12 @@ export class NeteaseAdapter implements PlatformAdapter {
           content: c.content ?? '',
           likedCount: c.likedCount ?? 0,
         }));
-      return { hot: map(data?.hotComments), latest: map(data?.comments) };
+      return {
+        hot: page === 0 ? map(data?.hotComments) : [],
+        latest: map(data?.comments),
+        latestTotal: data?.total,
+        hasMoreLatest: data?.more ?? false,
+      };
     } catch (err) {
       console.warn('[NeteaseAdapter] comments failed:', err instanceof Error ? err.message : err);
       return null;
@@ -339,7 +372,8 @@ export class NeteaseAdapter implements PlatformAdapter {
         platform: 'netease',
         id: String(artist.id ?? artistId),
         name: artist.name ?? '',
-        avatar: artist.picUrl ?? artist.img1v1Url ?? '',
+        // artist_detail 的字段是 avatar/cover（部分接口才是 img1v1Url/picUrl）
+        avatar: artist.avatar || artist.img1v1Url || artist.picUrl || artist.cover || '',
         description: desc?.body?.briefDesc || undefined,
       };
     } catch {
@@ -409,5 +443,31 @@ export class NeteaseAdapter implements PlatformAdapter {
       console.warn('[NeteaseAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
       return null;
     }
+  }
+
+  /** 歌手全部歌曲：artist_songs 分页拉全（50/页，上限 1000 首）。 */
+  async fetchArtistAllSongs(artistId: string): Promise<Track[]> {
+    const out: Track[] = [];
+    const seen = new Set<string>();
+    const cookie = this.cookies.getHeader('netease') ?? '';
+    try {
+      for (let offset = 0; offset < 1000; offset += 50) {
+        const res = await callNcmSafe('artist_songs', { id: artistId, limit: 50, offset, cookie });
+        const songs = (res?.body?.songs ?? []) as Array<Record<string, any>>;
+        let added = 0;
+        for (const s of songs) {
+          const t = mapNeteaseTrack(s);
+          if (!t) continue;
+          if (seen.has(t.sourceId)) continue;
+          seen.add(t.sourceId);
+          out.push(t);
+          added++;
+        }
+        if (songs.length < 50 || added === 0) break;
+      }
+    } catch (err) {
+      console.warn('[NeteaseAdapter] 歌手全部歌曲失败:', err instanceof Error ? err.message : err);
+    }
+    return out;
   }
 }

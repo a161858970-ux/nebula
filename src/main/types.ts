@@ -63,6 +63,10 @@ export interface CommentItem {
 export interface CommentResult {
   hot: CommentItem[];
   latest: CommentItem[];
+  /** 最新评论总数（平台返回时；用于前端显示）。 */
+  latestTotal?: number;
+  /** 是否还有更多最新评论可分页加载。 */
+  hasMoreLatest?: boolean;
 }
 
 export interface Playlist {
@@ -114,7 +118,7 @@ export interface PlatformAdapter {
   fetchPlaylist(playlistId: string): Promise<Playlist>;
   fetchSongUrl(songId: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
-  fetchComments?(songId: string): Promise<CommentResult | null>;
+  fetchComments?(songId: string, page?: number): Promise<CommentResult | null>;
   fetchSongDetail?(songId: string): Promise<SongDetail | null>;
   fetchArtistInfo?(artistId: string): Promise<ArtistInfo | null>;
   fetchArtistSongs?(artistId: string): Promise<Track[]>;
@@ -125,6 +129,10 @@ export interface PlatformAdapter {
   searchSongs?(keyword: string, pageSize?: number): Promise<Track[]>;
   /** 关键词搜歌手（netease/qq），返回带平台定位的命中。 */
   searchArtists?(keyword: string, pageSize?: number): Promise<ArtistSearchHit[]>;
+  /** 关键词搜专辑（netease），返回专辑摘要（供跨平台专辑转译路由）。 */
+  searchAlbums?(keyword: string, pageSize?: number): Promise<AlbumSummary[]>;
+  /** 歌手全部歌曲（分页拉全，供歌手页「查看全部歌曲」）。 */
+  fetchArtistAllSongs?(artistId: string): Promise<Track[]>;
   /** Quality options available for the current account (netease/qq). */
   listQualities?(songId?: string): Promise<QualityOption[]>;
 }
@@ -179,14 +187,16 @@ export interface ArtistInfo {
   description?: string;
 }
 
-export interface AlbumSummary {
-  platform: Platform;
-  id: string;
-  name: string;
-  cover: string;
-  year?: number;
-  songCount?: number;
-}
+  export interface AlbumSummary {
+    platform: Platform;
+    id: string;
+    name: string;
+    cover: string;
+    /** 专辑歌手名（用于跨平台专辑转译的歌手校验）。 */
+    artist?: string;
+    year?: number;
+    songCount?: number;
+  }
 
 /** 专辑详情（供歌手页专辑点击进入）。 */
 export interface AlbumDetail {

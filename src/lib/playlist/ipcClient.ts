@@ -110,6 +110,7 @@ export interface DesktopAlbumSummary {
   id: string;
   name: string;
   cover: string;
+  artist?: string;
   year?: number;
   songCount?: number;
 }
@@ -133,6 +134,20 @@ export interface DesktopArtistHit {
   avatar?: string;
 }
 
+export interface DesktopCommentItem {
+  nickname: string;
+  avatarUrl: string;
+  content: string;
+  likedCount: number;
+}
+
+export interface DesktopCommentResult {
+  hot: DesktopCommentItem[];
+  latest: DesktopCommentItem[];
+  latestTotal?: number;
+  hasMoreLatest?: boolean;
+}
+
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
 export interface DesktopApi {
@@ -141,14 +156,17 @@ export interface DesktopApi {
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
   fetchLyric: (track: DesktopTrack) => IpcResult<unknown>;
-  fetchComments: (track: DesktopTrack) => IpcResult<unknown>;
+  fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
   songDetail: (track: DesktopTrack) => IpcResult<DesktopSongDetail | null>;
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
   artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
+  artistSongsAll: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
   albumDetail: (platform: string, albumId: string) => IpcResult<DesktopAlbumDetail | null>;
   searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopTrack[]>;
   searchArtists: (keyword: string, pageSize?: number) => IpcResult<DesktopArtistHit[]>;
+  resolveArtistByName: (name: string) => IpcResult<DesktopArtistHit | null>;
+  resolveAlbumByTitle: (title: string, artist?: string) => IpcResult<DesktopAlbumSummary | null>;
   loginQr: () => IpcResult<{ unikey: string; payload: string }>;
   loginPoll: (unikey: string) => IpcResult<{ ok: boolean; message: string }>;
   loginPlatforms: () => IpcResult<DesktopLoginPlatform[]>;

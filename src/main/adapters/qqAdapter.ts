@@ -305,26 +305,40 @@ export class QqAdapter implements PlatformAdapter {
     }
   }
 
-  async fetchComments(songmid: string): Promise<CommentResult | null> {
+  /**
+   * QQ 评论：topid 需要数字 songid（songmid 无效）；cmd=6 热门 / cmd=8 全部（最新），
+   * comment.commenttotal 为总数、morecomment 表示是否还有下一页。
+   */
+  async fetchComments(songmid: string, page = 0): Promise<CommentResult | null> {
     try {
-      const data = await this.http.requestJson<{
-        hot_comment?: { commentlist?: Array<Record<string, any>> };
-        new_comment?: { commentlist?: Array<Record<string, any>> };
-      }>(
-        `https://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg?g_tk=5381&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0&cid=205360772&reqtype=2&biztype=1&topid=${encodeURIComponent(songmid)}&cmd=8&needmusiccrit=0&pagenum=0&pagesize=25&domain=qq.com&ct=24`,
-        { platform: 'qq' },
-      );
+      const req = await musicuPost(this.http, 'music.pf_song_detail_svr', 'get_song_detail_yqq', {
+        song_mid: songmid,
+      });
+      const songId = (req?.data?.track_info as { id?: number | string } | undefined)?.id;
+      if (!songId) return null;
+      const q = (cmd: number, pagenum: number) =>
+        `https://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg?g_tk=5381&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0&cid=205360772&reqtype=2&biztype=1&topid=${encodeURIComponent(String(songId))}&cmd=${cmd}&needmusiccrit=0&pagenum=${pagenum}&pagesize=25&domain=qq.com&ct=24`;
       const map = (list: Array<Record<string, any>> | undefined) =>
         (list ?? []).map((c) => ({
           id: String(c.commentid ?? ''),
-          nickname: c.nick ?? c.rootcommentnick ?? '匿名用户',
-          avatarUrl: c.avatarurl ?? c.rootcommentavatar ?? '',
-          content: c.rootcommentcontent ?? '',
-          likedCount: c.rootcommentlikenum ?? 0,
+          nickname: c.rootcommentnick || c.nick || '匿名用户',
+          avatarUrl: c.avatarurl ?? '',
+          content: c.rootcommentcontent || c.middlecommentcontent || '',
+          likedCount: c.praisenum ?? c.rootcommentlikenum ?? 0,
         }));
+
+      const [latestData, hotData] = page === 0
+        ? await Promise.all([
+            this.http.requestJson<{ comment?: { commentlist?: Array<Record<string, any>>; commenttotal?: number }; morecomment?: number }>(q(8, 1), { platform: 'qq' }),
+            this.http.requestJson<{ comment?: { commentlist?: Array<Record<string, any>> } }>(q(6, 1), { platform: 'qq' }),
+          ])
+        : [await this.http.requestJson<{ comment?: { commentlist?: Array<Record<string, any>>; commenttotal?: number }; morecomment?: number }>(q(8, page + 1), { platform: 'qq' }), null];
+
       return {
-        hot: map(data?.hot_comment?.commentlist),
-        latest: map(data?.new_comment?.commentlist),
+        hot: map(hotData?.comment?.commentlist),
+        latest: map(latestData?.comment?.commentlist),
+        latestTotal: latestData?.comment?.commenttotal,
+        hasMoreLatest: (latestData?.morecomment ?? 0) > 0,
       };
     } catch (err) {
       console.warn('[QqAdapter] comments failed:', err instanceof Error ? err.message : err);
@@ -417,6 +431,45 @@ export class QqAdapter implements PlatformAdapter {
       year: a.publishDate ? Number(String(a.publishDate).slice(0, 4)) || undefined : undefined,
       songCount: a.totalNum,
     }));
+  }
+
+  /** 歌手全部歌曲：GetSingerSongList 分页拉全（接口单页上限 30，按 totalNum 拉全，上限 1000 首）。 */
+  async fetchArtistAllSongs(artistId: string): Promise<Track[]> {
+    const out: Track[] = [];
+    const seen = new Set<string>();
+    try {
+      for (let begin = 0; begin < 1000; begin += 30) {
+        const req = await musicuPost(this.http, 'musichall.song_list_server', 'GetSingerSongList', {
+          singerMid: artistId,
+          order: 1,
+          number: 30,
+          begin,
+        });
+        const list = (req?.data?.songList as Array<Record<string, any>> | undefined) ?? [];
+        const totalNum = Number(req?.data?.totalNum) || 0;
+        let added = 0;
+        for (const item of list) {
+          const s = (item.songInfo ?? item) as Record<string, any>;
+          const t = mapQQTrack({
+            songmid: s.mid ?? s.songmid,
+            songname: s.name ?? s.title ?? s.songname,
+            singer: s.singer,
+            albummid: s.album?.mid ?? s.albummid,
+            albumname: s.album?.name ?? s.albumname,
+            interval: s.interval,
+          });
+          if (!t) continue;
+          if (seen.has(t.sourceId)) continue;
+          seen.add(t.sourceId);
+          out.push(t);
+          added++;
+        }
+        if (list.length < 30 || added === 0 || out.length >= totalNum) break;
+      }
+    } catch (err) {
+      console.warn('[QqAdapter] 歌手全部歌曲失败:', err instanceof Error ? err.message : err);
+    }
+    return out;
   }
 
   /**

@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import { creditsFromLrc, mergeLyric } from '../parsers/lyricParser';
 import { matchScore } from './songResolver';
+import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -122,14 +123,69 @@ export class LyricService {
     return null;
   }
 
-  async fetchComments(track: Track): Promise<CommentResult | null> {
-    try {
-      const fn = this.adapters[track.platform].fetchComments;
-      return fn ? await fn.call(this.adapters[track.platform], track.sourceId) : null;
-    } catch (err) {
-      console.warn('[LyricService] 评论获取失败:', errMsg(err));
-      return null;
+  async fetchComments(track: Track, page = 0): Promise<CommentResult | null> {
+      try {
+        const fn = this.adapters[track.platform].fetchComments;
+        return fn ? await fn.call(this.adapters[track.platform], track.sourceId, page) : null;
+      } catch (err) {
+        console.warn('[LyricService] 评论获取失败:', errMsg(err));
+        return null;
+      }
     }
+
+  /** 歌手全部歌曲（netease/qq 分页拉全；未实现平台返回空数组）。 */
+  async fetchArtistAllSongs(platform: Platform, artistId: string): Promise<Track[]> {
+    try {
+      const adapter = this.adapters[platform];
+      return adapter.fetchArtistAllSongs ? await adapter.fetchArtistAllSongs(artistId) : [];
+    } catch (err) {
+      console.warn('[LyricService] 歌手全部歌曲失败:', errMsg(err));
+      return [];
+    }
+  }
+
+  /**
+   * 名字转译：按歌手名在网易云/QQ 搜歌手，返回最佳命中（供酷狗/汽水/Spotify
+   * 等无歌手接口的平台点击歌手时路由到可展示的歌手页）。
+   */
+  async resolveArtistByName(name: string): Promise<ArtistSearchHit | null> {
+    const clean = String(name || '').trim();
+    if (!clean) return null;
+    const hits = await this.searchArtists(clean, 8);
+    const scored = hits
+      .map((h) => ({ h, score: titleSimilarity(h.name, clean) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    return scored[0]?.h ?? null;
+  }
+
+  /**
+   * 专辑转译：按专辑名在网易云搜专辑，歌手名双重校验（歌手不一致降权但不直接排除，
+   * 因为网易云专辑搜索结果里歌手字段可能为空）。
+   */
+  async resolveAlbumByTitle(title: string, artist?: string): Promise<AlbumSummary | null> {
+    const clean = String(title || '').trim();
+    if (!clean) return null;
+    const nArtist = artist ? normalizeQuery(artist) : '';
+    const albums = this.adapters.netease.searchAlbums
+      ? await this.adapters.netease.searchAlbums(clean, 10)
+      : [];
+    const scored = albums
+      .map((a) => {
+        const score = titleSimilarity(a.name, clean);
+        if (score <= 0) return { a, score: 0 };
+        if (nArtist) {
+          const albumArtist = normalizeQuery(a.artist ?? '');
+          const artistHit =
+            !!albumArtist &&
+            (albumArtist === nArtist || albumArtist.includes(nArtist) || nArtist.includes(albumArtist));
+          if (!artistHit) return { a, score: score * 0.4 };
+        }
+        return { a, score };
+      })
+      .filter((x) => x.score > 0.4)
+      .sort((x, y) => y.score - x.score);
+    return scored[0]?.a ?? null;
   }
 
   async fetchSongDetail(track: Track): Promise<SongDetail | null> {

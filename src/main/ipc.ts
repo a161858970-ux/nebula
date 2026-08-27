@@ -85,7 +85,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     };
   });
   safe('nebula:lyric', async ({ track }: { track: Track }) => deps.lyricService.fetchLyric(track));
-  safe('nebula:comments', async ({ track }: { track: Track }) => deps.lyricService.fetchComments(track));
+  safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>
+    deps.lyricService.fetchComments(track, Number(page) || 0),
+  );
   safe('nebula:song-detail', async ({ track }: { track: Track }) => deps.lyricService.fetchSongDetail(track));
   safe('nebula:artist-info', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistInfo(platform, String(artistId)),
@@ -96,6 +98,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:artist-albums', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistAlbums(platform, String(artistId)),
   );
+  safe('nebula:artist-songs-all', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
+    deps.lyricService.fetchArtistAllSongs(platform, String(artistId)),
+  );
   safe('nebula:album-detail', async ({ platform, albumId }: { platform: Platform; albumId: string }) =>
     deps.lyricService.fetchAlbumDetail(platform, String(albumId)),
   );
@@ -104,6 +109,12 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   );
   safe('nebula:search-artists', async ({ keyword, pageSize }: { keyword: string; pageSize?: number }) =>
     deps.lyricService.searchArtists(String(keyword), Number(pageSize) || 5),
+  );
+  safe('nebula:resolve-artist-by-name', async ({ name }: { name: string }) =>
+    deps.lyricService.resolveArtistByName(String(name)),
+  );
+  safe('nebula:resolve-album-by-title', async ({ title, artist }: { title: string; artist?: string }) =>
+    deps.lyricService.resolveAlbumByTitle(String(title), artist ? String(artist) : undefined),
   );
 
   safe('nebula:wallpaper:list', async () => {
