@@ -105,6 +105,15 @@ await step('fetchLyric', async () => {
   return { lines: lyric.lines.length };
 });
 
+await step('fetchAlbumDetail (albummid via song detail)', async () => {
+  const detail = await adapters.qq.fetchSongDetail(searchTrack.sourceId);
+  const albumMid = detail?.album?.id;
+  if (!albumMid) throw new Error('no album mid from song detail');
+  const album = await adapters.qq.fetchAlbumDetail(albumMid);
+  if (!album?.tracks?.length) throw new Error(`album detail empty (${albumMid})`);
+  return { album: album.name, tracks: album.tracks.length };
+});
+
 await step('getMyPlaylists', async () => {
   const playlists = await login.getMyPlaylists();
   if (!playlists.length) throw new Error('getMyPlaylists returned 0 playlists (loginUin/hostuin/g_tk issue)');
