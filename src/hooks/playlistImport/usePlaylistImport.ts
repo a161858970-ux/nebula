@@ -21,7 +21,7 @@ interface UsePlaylistImportOptions {
 }
 
 /**
- * 导入流程领域（docs/ARCHITECTURE.md §2）：
+ * 导入流程领域（docs/project/ARCHITECTURE.md §2）：
  * 手动链接 / 平台歌单 / 本地目录 三入口，只负责解析与状态，不拥有曲库。
  */
 export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImportOptions) {

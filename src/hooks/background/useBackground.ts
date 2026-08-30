@@ -24,7 +24,7 @@ interface UseBackgroundOptions {
 }
 
 /**
- * 背景/氛围领域（docs/ARCHITECTURE.md §2）：
+ * 背景/氛围领域（docs/project/ARCHITECTURE.md §2）：
  * 拥有 bgSetting / bgCoverMode，产出 VisualAtmosphere；
  * 只写自己的环境光 CSS 变量，**不直接修改歌词/玻璃**（歌词配色经中间层由消费端推导）。
  */

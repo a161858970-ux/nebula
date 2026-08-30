@@ -7,7 +7,7 @@ export interface LibraryState {
 type Listener = () => void;
 
 /**
- * 曲库服务（docs/ARCHITECTURE.md §2）：
+ * 曲库服务（docs/project/ARCHITECTURE.md §2）：
  * 仅承载 track/catalog 数据，**不持有 currentPlaylist**（歌单生命周期归 usePlaylist）。
  * `applyImported` 是唯一外部导入入口。
  */

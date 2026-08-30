@@ -41,7 +41,7 @@ function same(a: PlaybackState, b: PlaybackState): boolean {
 
 const PlaybackCtx = createContext<PlaybackState>(snapshot(audioPlayer.getState()));
 
-/** 低频播放状态订阅（docs/ARCHITECTURE.md §4：忽略 tick，杜绝高频重渲染）。 */
+/** 低频播放状态订阅（docs/project/ARCHITECTURE.md §4：忽略 tick，杜绝高频重渲染）。 */
 export function usePlayback(): PlaybackState {
   return useContext(PlaybackCtx);
 }

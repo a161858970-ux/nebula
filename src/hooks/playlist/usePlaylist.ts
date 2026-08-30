@@ -7,7 +7,7 @@ import type { PlaylistMeta } from '../../lib/playlistTypes';
 export type { PlaylistMeta };
 
 /**
- * 歌单生命周期 / 播放队列（docs/ARCHITECTURE.md §2）：
+ * 歌单生命周期 / 播放队列（docs/project/ARCHITECTURE.md §2）：
  * 当前歌单身份 + 队列播放入口；歌曲数据来自 LibraryService（不持有 songs）。
  */
 export function usePlaylist() {

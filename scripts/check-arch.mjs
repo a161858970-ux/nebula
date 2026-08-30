@@ -1,6 +1,6 @@
 /* eslint-disable */
 /**
- * 架构依赖守卫（docs/ARCHITECTURE.md §6 的机制化执行）。
+ * 架构依赖守卫（docs/project/ARCHITECTURE.md §6 的机制化执行）。
  * 用法：node scripts/check-arch.mjs
  *
  * 规则：

@@ -34,7 +34,7 @@ interface OverlayStackProps {
 }
 
 /**
- * Z4 浮层区块（docs/ARCHITECTURE.md §5）：二级播放窗 / 壁纸窗口 / 信息弹层 / 模式 toast / 右键菜单。
+ * Z4 浮层区块（docs/project/ARCHITECTURE.md §5）：二级播放窗 / 壁纸窗口 / 信息弹层 / 模式 toast / 右键菜单。
  * 同层区块互不依赖，纯收 props（memo 化，App 提供稳定回调）。
  */
 export const OverlayStack = memo(function OverlayStack({

@@ -1,7 +1,7 @@
 import type { CoverSample, LyricPalette } from './coverColors';
 
 /**
- * VisualAtmosphere 中间层（docs/ARCHITECTURE.md §2/§4）：
+ * VisualAtmosphere 中间层（docs/project/ARCHITECTURE.md §2/§4）：
  * useBackground 只产出视觉数据，不直接修改歌词/玻璃；
  * 歌词配色由消费端（渲染时经 VisualAtmosphere context + 纯函数）推导。
  */

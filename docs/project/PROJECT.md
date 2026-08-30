@@ -89,10 +89,10 @@ pnpm qa:desktop-play  # 桌面播放链路冒烟
 
 - 任何后端改动：`pnpm qa:backend` 必须通过；加密类改动需同步在 `backend-smoke.mjs` 补充断言。
 - 任何前端交互改动：`pnpm qa` 必须通过（有严格阈值断言）。
-- 每次改动后同步更新 `docs/CHANGE_LOG.md`（见第 5 节）。
+- 每次改动后同步更新 `docs/project/CHANGE_LOG.md`（见第 5 节）。
 
 ## 5. 文档维护约定
 
-1. 每次会话/每次改动完成时，向 `docs/CHANGE_LOG.md` 追加一条记录（日期、目标、改动、验证、遗留）。
-2. 若出现新的踩坑经验或平台接口变动，同步更新 `docs/NOTES.md`。
+1. 每次会话/每次改动完成时，向 `docs/project/CHANGE_LOG.md` 追加一条记录（日期、目标、改动、验证、遗留）。
+2. 若出现新的踩坑经验或平台接口变动，同步更新 `docs/project/NOTES.md`。
 3. 架构级变化（新模块、新目录、新依赖）同步更新本文件第 2/3 节。

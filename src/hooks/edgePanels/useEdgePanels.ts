@@ -14,7 +14,7 @@ interface UseEdgePanelsOptions {
 }
 
 /**
- * 边缘面板领域（docs/ARCHITECTURE.md §2）：
+ * 边缘面板领域（docs/project/ARCHITECTURE.md §2）：
  * 顶部/右侧/左侧面板的显示状态、热点触发、移出防抖。
  * 只接收组合层传入的 ref，不依赖其他 hook。
  */

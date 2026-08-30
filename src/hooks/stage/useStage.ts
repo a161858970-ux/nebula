@@ -56,7 +56,7 @@ interface UseStageOptions {
 }
 
 /**
- * 舞台领域（docs/ARCHITECTURE.md §2，最后迁移的高风险块）：
+ * 舞台领域（docs/project/ARCHITECTURE.md §2，最后迁移的高风险块）：
  * 拥有 hovered/visible/failed/liked/渐进揭示/PanController/虚拟化渲染数据；
  * 只依赖 lib（audioPlayer / LibraryService / 布局 / 空间索引 / 搜索），不依赖其他 hook。
  */

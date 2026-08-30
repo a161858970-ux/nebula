@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-08-30 — 文档体系重构：docs 二级分类 + 用户画像/上下文快照
+
+**目标**
+
+1. docs 内 md 增多，按二级目录分类。
+2. 补齐长期用户记忆画像与上下文压缩继承机制（此前仅有一次性 HANDOFF，无持续维护机制）。
+
+**改动**
+
+- 分类：`docs/{project,design,meta}` 三个二级目录（入口 `docs/README.md`）；`git mv` 保留历史。
+- 新增 `docs/meta/USER_PROFILE.md`（用户画像：沟通/工作流/审美/反模式）与 `docs/meta/CONTEXT_SNAPSHOT.md`（当前状态，供新会话最小 token 恢复上下文）。
+- 更新 HANDOFF / PROJECT / NOTES 内部引用与代码注释中的 docs 路径。
+- 维护约定：用户新稳定偏好 → `USER_PROFILE.md`；里程碑 / 会话结束 → 刷新 `CONTEXT_SNAPSHOT.md`。
+
+**验证**
+
+- 全库 grep `docs/` 引用已核对更新；文档 + 注释改动，不涉及构建 / QA。
+
+**遗留**
+
+- CHANGE_LOG 历史条目中的旧路径保持原样（历史记录，不重写）。
+
 ## 2026-08-27 — 跨平台歌手/专辑转译路由 + 专辑点播 VIP 路由 + 评论/歌手全曲/详情跳转/头像修复
 
 **目标**

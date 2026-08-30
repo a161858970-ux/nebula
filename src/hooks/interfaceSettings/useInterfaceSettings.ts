@@ -9,7 +9,7 @@ function loadUiBool(key: string): boolean {
 }
 
 /**
- * 界面设置领域（docs/ARCHITECTURE.md §2）：
+ * 界面设置领域（docs/project/ARCHITECTURE.md §2）：
  * 沉浸开关（隐藏卡片 / 隐藏歌词层）+ 持久化。
  */
 export function useInterfaceSettings() {

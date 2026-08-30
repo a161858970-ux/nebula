@@ -70,7 +70,7 @@ function loadLyricSettings(): LyricVisualSettings {
 }
 
 /**
- * 歌词领域（docs/ARCHITECTURE.md §2）：
+ * 歌词领域（docs/project/ARCHITECTURE.md §2）：
  * 运行态（lyricLines 拉取/归一化，随切歌）+ 设置（lyricSettings 持久化）+ 翻译开关。
  * 只依赖 service（audioPlayer / IPC / lib/lyrics），不依赖其他 hook。
  */

@@ -9,12 +9,14 @@
 ## 0. 必读顺序（未读完全前不写代码）
 
 1. 本文件（HANDOFF.md）
-2. `docs/PROJECT.md` — 项目总览、技术栈、常用命令、关键架构决策
-3. `docs/ARCHITECTURE.md` — 前端领域化架构、依赖规则、Context 清单
-4. `docs/UI_SPEC.md` — UI 设计语言、Hover 规范、液态玻璃预留
-5. `docs/LYRICS_SYSTEM.md` — Z1 穿梭歌词设计规格（参数与已废弃决策）
-6. `docs/CHANGE_LOG.md` 最近 20 条 — 了解最近改动脉络与验证方式
-7. `docs/NOTES.md` — 踩坑记录与待办
+2. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
+3. `docs/meta/CONTEXT_SNAPSHOT.md` — 当前状态与活跃任务
+4. `docs/project/PROJECT.md` — 项目总览、技术栈、常用命令、关键架构决策
+5. `docs/project/ARCHITECTURE.md` — 前端领域化架构、依赖规则、Context 清单
+6. `docs/design/UI_SPEC.md` — UI 设计语言、Hover 规范、液态玻璃预留
+7. `docs/design/LYRICS_SYSTEM.md` — Z1 穿梭歌词设计规格（参数与已废弃决策）
+8. `docs/project/CHANGE_LOG.md` 最近 20 条 — 了解最近改动脉络与验证方式
+9. `docs/project/NOTES.md` — 踩坑记录与待办
 
 ---
 
@@ -25,7 +27,7 @@
 3. **UI 以现有实现为唯一真源**。项目曾发生过"参考 Prototype 重新设计导致整合爆炸"的教训；不允许为了"适配"而改变已确认的视觉结构。审美与参数先查 `UI_SPEC.md`，不要自由发挥。
 4. **不要输出截图 png**。用户明确不需要 output 目录里的截图产物。
 5. **git 每步提交 + 推送**。远程 `origin/main`（`github.com/a161858970-ux/nebula.git`）；文档与代码一起提交。
-6. **文档同步**：每次改动追加 `CHANGE_LOG.md`；踩坑更新 `NOTES.md`；架构变化更新 `ARCHITECTURE.md`；UI 规范变化更新 `UI_SPEC.md`。
+6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；UI 规范变化更新 `docs/design/UI_SPEC.md`。
 7. **搜索优先 `rg`**；本项目 Windows PowerShell 下不可用时改用 `Select-String`。
 8. **沟通语言**：中文；结论先行，给可执行步骤。用户自述 git / 工程操作为新手，但产品与审美判断力强——技术细节按新手水平解释，方向性判断尊重用户。
 
@@ -33,7 +35,7 @@
 
 ## 2. 用户反复强调的产品原则
 
-- **Z1 歌词系统是项目特殊难点**："歌词播放沿时间推进，但视觉是多句并行；设计逻辑时不能只按传统垂直滚播考虑当前句，必须同时计算前后 1–2 句与已发生状态来调整整个匹配系统。"这是 Z1 的底层法则（详见 `LYRICS_SYSTEM.md`）。
+- **Z1 歌词系统是项目特殊难点**："歌词播放沿时间推进，但视觉是多句并行；设计逻辑时不能只按传统垂直滚播考虑当前句，必须同时计算前后 1–2 句与已发生状态来调整整个匹配系统。"这是 Z1 的底层法则（详见 `docs/design/LYRICS_SYSTEM.md`）。
 - **高级感 = 克制**：不滥用发光 / 跳动；玻璃是"载体"不是"装饰"；一切材质、颜色、动效参数走 CSS 变量，为未来「液态玻璃」第二套主题留路。
 - **前瞻可读性优先**：当前句 + 下一句 + 下下句三句结构已锁定，不要退回纯随机穿梭。
 
@@ -42,8 +44,8 @@
 ## 3. 当前状态速览（2026-08-19）
 
 - 架构收敛 9 步全部完成，App.tsx 从 1411 行收敛到 587 行；依赖规则由 `scripts/check-arch.mjs` 机制化强制。
-- 工作区干净；最近提交见 `git log`（推送至 `origin/main`）。
-- 主要待办见 `NOTES.md`；已废弃决策见 `LYRICS_SYSTEM.md` §8「明确不做」。
+- 当前状态速览见 `docs/meta/CONTEXT_SNAPSHOT.md`（本段历史快照 2026-08-19）。
+- 主要待办见 `docs/project/NOTES.md`；已废弃决策见 `docs/design/LYRICS_SYSTEM.md` §8「明确不做」。
 
 ---
 

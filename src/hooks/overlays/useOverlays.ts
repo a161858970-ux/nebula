@@ -22,7 +22,7 @@ export interface ContextMenuState {
 }
 
 /**
- * 浮层领域（docs/ARCHITECTURE.md §2）：
+ * 浮层领域（docs/project/ARCHITECTURE.md §2）：
  * 右键菜单 / 信息弹层（评论·详情·歌手）/ 二级播放窗 / 模式 toast。
  * 只依赖 service（audioPlayer / LibraryService / IPC），不依赖其他 hook。
  */

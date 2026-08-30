@@ -14,7 +14,7 @@ interface UseSearchClusterOptions {
 }
 
 /**
- * 搜索聚簇领域（docs/ARCHITECTURE.md §2）：
+ * 搜索聚簇领域（docs/project/ARCHITECTURE.md §2）：
  * searchMatches 状态 + 定位/聚簇 handlers；歌曲数据来自 App 传参（songs prop），不依赖 usePlaylist。
  */
 export function useSearchCluster({ controllerRef, effectiveCardsRef, metricsRef }: UseSearchClusterOptions) {

@@ -4,7 +4,7 @@ import { hasDesktopAPI } from '../../lib/playlist/ipcClient';
 import { emptyAccount, type AccountState } from '../../lib/accounts';
 
 /**
- * 账号领域（docs/ARCHITECTURE.md §2）：
+ * 账号领域（docs/project/ARCHITECTURE.md §2）：
  * 多平台登录状态、歌单摘要、启动并行探活、外部「去登录」请求。
  * 不依赖任何其他 hook；「去登录后打开右侧面板」由 App 组合层接线（showPanel）。
  */

@@ -24,7 +24,7 @@ interface StageCanvasProps {
 }
 
 /**
- * Z2 星云舞台区块（docs/ARCHITECTURE.md §5）：stage-3d + 卡片虚拟化渲染。
+ * Z2 星云舞台区块（docs/project/ARCHITECTURE.md §5）：stage-3d + 卡片虚拟化渲染。
  * 收 useStage 数据（纯 props，memo 化）；同层区块互不依赖，组合由 App 完成。
  */
 export const StageCanvas = memo(function StageCanvas({

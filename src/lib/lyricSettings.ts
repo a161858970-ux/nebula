@@ -1,4 +1,4 @@
-/** 歌词视觉设置（docs/ARCHITECTURE.md：共享类型，LyricsLayer 与 useLyrics 均从 lib 取）。 */
+/** 歌词视觉设置（docs/project/ARCHITECTURE.md：共享类型，LyricsLayer 与 useLyrics 均从 lib 取）。 */
 export interface LyricVisualSettings {
   fontSize: number;
   highlightStyle: 'sweep' | 'float';
