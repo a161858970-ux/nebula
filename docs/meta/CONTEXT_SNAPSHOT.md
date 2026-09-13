@@ -21,7 +21,7 @@
 ## 当前状态（2026-09-13）
 
 - **目录 / 分支**：
-  - `music-nebula`（main，HEAD `f69f13a`）— 主项目，本会话直管。
+  - `music-nebula`（main，HEAD `d003798`）— 主项目，本会话直管；已补仓库 README（开发期版）。
   - `music-nebula-ui Created by deepseek-codex`（`ui/nebula-design-deepseek-codex`，HEAD `d796031`）— UI 设计工作树，本会话直管。
   - `music-nebula-ui Created by mimo-hermes`（`ui/nebula-design`）— 另一 agent 的目录，不碰。
 - **活跃任务**：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）。
