@@ -27,18 +27,19 @@
 - QQ“我的歌单”必须走 musicu.fcg POST（music.musicasset.PlaylistBaseRead/GetPlaylistByUin，备用 UserSonglistService）；旧的 fcg_user_created_diss 登录态下已返回空列表。
 - QQ 退出登录需同时清空 `persist:qq-music-login` 分区（cookies+localstorage），否则官方登录窗口会残留旧账号自动登回。
 - Spotify 需要 `SPOTIFY_CLIENT_ID` 环境变量，未配置时登录按钮提示失败。
-- 酷狗登录需要 Electron 浏览器窗口（阶段 1 待实现）；四路取链 + VIP 探测已实现。
-- 汽水登录需要签名引擎（阶段 2 待实现）；歌词已支持免登录获取（SEO + volcengine）。
+- 酷狗登录：已完成（Electron 独立登录窗口 + 凭证捕获 + 分区 Cookie 清理）；四路取链 + VIP 探测已实现。
+- 汽水登录：已完成（签名引擎 + 扫码 + 凭证捕获；曾遇 2046 二次验证，现正常）。汽水**取链已放弃**（服务端按出口 IP 风控），歌单播放走网易云/QQ 兜底 + 多平台 VIP 路由。
 
 ## 待办 / 后续方向
 
 - [ ] 网易云 eapi 未来若被风控，接入 weapi 自动降级（weapi 通道已实测可用，代码已内置 `buildWeapiRequest`）。
 - [ ] 登录 Cookie 加密存储（keytar / DPAPI）替代明文 JSON。
 - [x] 歌词面板上下分区与高亮联动（NowPlayingPanel 已实现上下分区、当前行双高亮、翻译跟随）。
-- [ ] 收藏/喜欢状态持久化与“我喜欢”歌单联动。
-- [ ] 播放列表队列 UI（当前为点击卡片即播 + 上下曲顺序播放）。
+- [x] ~~收藏/喜欢状态持久化与“我喜欢”歌单联动~~ → **已废弃**（2026-08-30 用户决定彻底删除收藏功能：不做平台写回，也不做播放器内部收藏；随 Player P2 重写 NowPlayingPanel 时清除 `liked` 接线）。
+- [x] 播放列表队列 UI（UI 分支 Player P1 已完成：常显入口 + 当前项/即将播放、点击跳播、仅即将播放可移除、「下一首播放」FIFO）。
 - [x] 评论弹窗/面板渲染（已完成：底部条评论入口 → 评论页；后端 `fetchComments` 已就绪）。
 - [x] 左右 Dock 重构（小球 → 胶囊 → 窗口已完成并整合主项目，见 `docs/design/UI_SPEC.md` §5.7）。
+- [ ] Nebula Player 重构剩余阶段（P2–P8，见 UI 分支 `docs/design/PLAYER_IMPL_PLAN.md`）；挂起决策：播放模式循环顺序（现「顺序→单曲→随机」vs 文档「顺序→随机→单曲」）。
 - [ ] 未来「液态玻璃」第二套主题（见 `docs/design/UI_SPEC.md` §9，两套主题布局一致、仅材质差异）。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
